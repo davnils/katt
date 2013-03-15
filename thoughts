@@ -1,12 +1,10 @@
-CODENAME SOFIE - A DAVNILS PRODUCTION
-
 Sofie aims to enhance the KATTIS experience (tm) and act as a personal assistant.
 
 sofie config <param> <value>
 no parameters: display all settings (which are stored in ~/.kattissrc)
 if ~/.kattissrc does not exist ==> prompt user to login and give link to file
 given some parameters, update ~/.kattissrc
-config is stored in some easy-to-parse format (backwardscompatible)
+config is stored in some easy-to-parse format (backwards compatible)
 
 includes:
 kattis url (by default kattis.scrool.se)
@@ -53,10 +51,3 @@ Implement all sub-commands.
 Implement language identification.
 Integrate configuration file.
 Write documentation and help.
-
-
-------------------------------
-
-notes
-
-curl --data "token=&user=davnils&script=true" https://kth.kattis.scrool.se/login
