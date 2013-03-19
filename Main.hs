@@ -6,6 +6,7 @@ import Control.Monad.Reader
 import qualified Data.ByteString.Char8 as B
 import Data.List (find)
 import Data.Monoid ((<>))
+import Text.Regex.Posix
 import Network.Http.Client
 import OpenSSL
 import System.IO.Streams (readExactly, write)
@@ -27,6 +28,7 @@ loginSuccess = "Login successful"
 type ConnEnv m = ReaderT Connection m
 type AuthEnv m = ReaderT B.ByteString (ConnEnv m)
 type Submission = (B.ByteString, [FilePath])
+type SubmissionId = Integer
 
 makeSignedRequest :: RequestBuilder () -> AuthEnv IO Request
 makeSignedRequest req = do
@@ -57,8 +59,7 @@ buildChunk (Option fields payload) = return $ B.intercalate crlf [headerLine, ""
     headerLine = B.intercalate "; " fieldList
     fieldList = "Content-Disposition: form-data" : fields
 
--- send some files to the upload page, retrieve submission id
-submitSolution :: Submission -> AuthEnv IO B.ByteString
+submitSolution :: Submission -> AuthEnv IO SubmissionId
 submitSolution (problemId, files) = do
   let multiPartSeparator = "separator"
 
@@ -83,10 +84,11 @@ submitSolution (problemId, files) = do
       write (Just . fromByteString $ B.concat ["--", multiPartSeparator, crlf, serialized]) o)
       postFields
 
-    write (Just $ fromByteString $ B.concat ["--", multiPartSeparator, "--", crlf]) o
+    write (Just . fromByteString $ B.concat ["--", multiPartSeparator, "--", crlf]) o
     )
 
-  liftIO $ receiveResponse conn concatHandler
+  reply <- liftIO $ receiveResponse conn concatHandler
+  return . read . B.unpack $ reply =~ ("[0-9]+" :: B.ByteString)
 
 retrievePage :: B.ByteString -> AuthEnv IO B.ByteString
 retrievePage page = do
@@ -130,4 +132,4 @@ main = withOpenSSL . withConnection (establishConnection host) $ runReaderT go
       Nothing -> liftIO $ putStrLn "[-] failed to authenticate"
       Just session -> do
         liftIO . putStrLn $ "[*] temporary token: '" ++ B.unpack session ++ "'"
-        runReaderT (submitSolution ("hello", ["example.cc"]) >>= liftIO . putStrLn . B.unpack) session
+        runReaderT (submitSolution ("hello", ["example.cc"]) >>= liftIO . putStrLn . show) session
