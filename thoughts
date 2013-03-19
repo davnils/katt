@@ -19,7 +19,6 @@ optionally: create all of the above in a subdirectory named <problem> (-p)
 optionally: download description to 'desc' with -d switch.
 all of the above are repeated for all problems if a session is given.
 
-
 sofie submit <problem>
 requires a .sofie directory being present, or submits to the specified problem id
 identifies the language in use and which files will be sent to kattis
@@ -51,3 +50,32 @@ Implement all sub-commands.
 Implement language identification.
 Integrate configuration file.
 Write documentation and help.
+
+rev1: sofie init <problem> [-p]
+      [cd workingdir]
+      mkdir tests; mkdir .sofie 
+      write .sofie/config with problem id
+      [retrieve all tests]
+
+      sofie submit
+      read .sofie/config, find problem id
+      read all source files in the current dir, recursively
+      determine language, only support for C++
+      make submission, retrieve submission id
+      poll submission id until complete, print status in each step
+      finally register submission id and result in .sofie/results
+
+      sofie stats
+      verify that .sofie exists with necessary files
+      print problem id
+      print all results stored in the current dir as {id} {date/time} {status}
+      print if ever accepted
+
+split up into source code modules
+use ConfigFile for parse/storage of configuration state
+
+main: parser of command line, activates some submodule
+Utils: authentication and generic page retrieval functions
+LanguageIdentification: identifies language of submission, given list of file paths
+Upload: Handles file uploads and submission id status
+Init: Handles initialization and download / parsing of tests etc
