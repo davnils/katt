@@ -52,6 +52,7 @@ Integrate configuration file.
 Write documentation and help.
 
 rev1: sofie init <problem> [-p]
+      [mkdir workingdir]
       [cd workingdir]
       mkdir tests; mkdir .sofie 
       write .sofie/config with problem id

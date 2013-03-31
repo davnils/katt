@@ -2,6 +2,7 @@
 
 import Blaze.ByteString.Builder (fromByteString)
 import Control.Applicative
+import Control.Error
 import Control.Monad.Reader
 import qualified Data.ByteString.Char8 as B
 import Data.List (find)
@@ -15,6 +16,7 @@ host, user, token, loginPage, uploadPage, loginSuccess, crlf :: B.ByteString
 
 host = "https://kth.kattis.scrool.se"
 user = "davnils"
+token = ""
 
 loginPage = "/login"
 uploadPage = "/judge_upload"
@@ -24,15 +26,27 @@ loginSuccess = "Login successful"
 -- TODO: integrate error layer in ConnEnv
 --       common errors should be accessible through monad transformer
 --       but expections might still occur and shoulded generate plenty of debug data
+-- use the errors module
+-- EitherT B.ByteString m a
+-- how should it be integrated into the monad transformer stack?
+-- should be able to operate with error handling over ConnEnv and AuthEnv
 
-type ConnEnv m = ReaderT Connection m
-type AuthEnv m = ReaderT B.ByteString (ConnEnv m)
+-- should EitherT be integrated into  ConnEnv/AuthEnv aliases?
+-- probably, if it doesn't interfere.
+-- should EitherT occur twice in the stack alias? no!
+
+type ConnEnvInternal m = ReaderT Connection m
+type ConnEnv m e = EitherT e (ConnEnvInternal m)
+type AuthEnv m e = EitherT e (ReaderT B.ByteString (ConnEnvInternal m))
 type Submission = (B.ByteString, [FilePath])
 type SubmissionId = Integer
 
-makeSignedRequest :: RequestBuilder () -> AuthEnv IO Request
+noauth :: Monad m => ConnEnv m e a -> AuthEnv m e a
+noauth = EitherT . lift . runEitherT
+
+makeSignedRequest :: RequestBuilder () -> AuthEnv IO () Request
 makeSignedRequest req = do
-  key <- liftM (setHeader "Cookie") ask
+  key <- return $ liftM (setHeader "Cookie") ask
   liftIO . buildRequest $ req >> key
 
 defaultRequest :: RequestBuilder ()
@@ -59,7 +73,7 @@ buildChunk (Option fields payload) = return $ B.intercalate crlf [headerLine, ""
     headerLine = B.intercalate "; " fieldList
     fieldList = "Content-Disposition: form-data" : fields
 
-submitSolution :: Submission -> AuthEnv IO SubmissionId
+submitSolution :: Submission -> AuthEnv IO () SubmissionId
 submitSolution (problemId, files) = do
   let multiPartSeparator = "separator"
 
