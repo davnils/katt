@@ -72,11 +72,8 @@ rev1: sofie init <problem> [-p]
       print all results stored in the current dir as {id} {date/time} {status}
       print if ever accepted
 
-split up into source code modules
 use ConfigFile for parse/storage of configuration state
 
 main: parser of command line, activates some submodule
 Utils: authentication and generic page retrieval functions
 LanguageIdentification: identifies language of submission, given list of file paths
-Upload: Handles file uploads and submission id status
-Init: Handles initialization and download / parsing of tests etc
