@@ -44,7 +44,7 @@ submitSolution (problem, files) = do
     defaultRequest
     setContentType $ B.append "multipart/form-data; boundary=" multiPartSeparator
 
-  problemName <- noauth $ retrieveProblemName problem
+  problemName <- noAuth $ retrieveProblemName problem
 
   let postFields = [Option ["name=\"submit\""] "true"]
                 <> [Option ["name=\"submit_ctr\""] "2"]
