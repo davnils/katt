@@ -8,6 +8,7 @@ import Control.Error hiding (tryIO)
 import qualified Control.Exception as E
 import Control.Monad.Reader
 import qualified Data.ByteString.Char8 as B
+import Data.Foldable (fold)
 import Data.List (find)
 import Data.Monoid ((<>))
 import Network.Http.Client
@@ -146,39 +147,36 @@ parseProblemPage contents =
 parseAddress :: GenParser Char st TestParser
 parseAddress = undefined
 
--- TODO: verify usage of 'try'
+-- TODO: (1) fix handling of newline and spaces (2) verify usage of 'try'
 parseEmbedded :: GenParser Char st TestParser
-parseEmbedded = between startTag endTag tableBody
+parseEmbedded = between startEmbedded endEmbedded tableBody
   where
-  startTag = string "<table class=\"sample\" summary=\"sample data\">"
-  endTag = string "</table>"
+  startEmbedded = string "<table class=\"sample\" summary=\"sample data\">"
+  endEmbedded  = string "</table>"
 
-  htmlTag :: GenParser Char st () -> GenParser Char st' B.ByteString -> GenParser Char st'' [B.ByteString]
-  htmlTag tag p = undefined {- do
-    beginHtml tag
-    manyTill p $ try $ endHtml tag -}
+  htmlTag tag p = do
+    sp >> beginTag tag >> sp
+    manyTill p $ try $ endTag tag
 
-  {- htmlTag' :: Parser a -> Parser (B.ByteString, B.ByteString) -> Parser (B.ByteString, B.ByteString)
-  htmlTag' tag p = do
-    beginHtml tag
-    content <- p
-    endHtml tag
-    return content 
+  sp = skipMany $ skipMany $ space <|> newline <|> tab
+  beginTag tag = char '<' >> spaces >> tag >> spaces >> char '>'
+  endTag tag = char '<' >> spaces >> char '/' >> tag >> spaces >> char '>'
 
-  beginHtml tag = char '<' >> spaces >> tag >> spaces >> char '>' >> return ()
-  endHtml tag = char '<' >> spaces >> char '/' >> tag >> spaces >> char '>' >> return () -}
-  tr :: GenParser Char st B.ByteString -> GenParser Char st' [B.ByteString]
-  trTag :: GenParser Char st ()
-  trTag = char 't' >> char 'r' >> return ()
-  tr f = htmlTag trTag f
-  td = htmlTag (string "td" >> return ())
-  pre = htmlTag (string "pre" >> return ())
+  tr = htmlTag $ string "tr"
+  td = htmlTag $ string "td"
+  pre = htmlTag $ string "pre"
+
   tableBody = do
     tr anyChar
-    return $ TestContents [("", "")]
-    -- TestContents <$> many1 (htmlTag' (string "tr") testCase)
-  {- testCaseWrapper = td $ spaces >> newline >> pre anyToken
-  testCase = liftM2 (,) testCaseWrapper testCaseWrapper -}
+    TestContents <$> many1 (fold <$> htmlTag (string "tr") testCase)
+
+  testData = liftM fold $ td $ do
+    spaces
+    newline
+    beginTag $ string "pre"
+    B.pack <$> manyTill anyChar (try $ endTag $ string "pre")
+
+  testCase = liftM2 (,) testData testData
 
 -- retrieve test files, either
 -- (1) nonexistent
