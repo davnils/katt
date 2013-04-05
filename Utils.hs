@@ -3,11 +3,13 @@
 
 module Utils where
 
+import Codec.Archive.Zip
 import Control.Applicative ((<$>), (<*))
 import Control.Error hiding (tryIO)
 import qualified Control.Exception as E
 import Control.Monad.Reader
 import qualified Data.ByteString.Char8 as B
+import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Foldable (fold)
 import Data.List (find)
 import Data.Monoid ((<>))
@@ -50,6 +52,10 @@ noAuth = EitherT . lift . runEitherT
 
 tryIO :: MonadIO m => IO a -> EitherT ErrorDesc m a
 tryIO = EitherT . liftIO . liftM (fmapL (B.pack . show)) . 
+  (E.try :: (IO a -> IO (Either E.SomeException a)))
+
+tryIOMsg :: MonadIO m => B.ByteString -> IO a -> EitherT ErrorDesc m a
+tryIOMsg msg = EitherT . liftIO . liftM (fmapL $ const msg) . 
   (E.try :: (IO a -> IO (Either E.SomeException a)))
 
 terminateOnFailure :: MonadIO m => ErrorDesc -> EitherT ErrorDesc m a -> m a
@@ -147,7 +153,7 @@ parseProblemPage contents =
 parseAddress :: GenParser Char st TestParser
 parseAddress = do
   void $ manyTill anyChar (try $ startLink >> lookAhead endParser)
-  TestAddress . B.pack <$> endParser
+  TestAddress . (B.cons '/') . B.pack <$> endParser
 
   where
   startLink = string "<a href='"
@@ -192,10 +198,22 @@ parseEmbedded = TestContents <$> tests
   testData = liftM fold $ td innerTestData <* sp
   testCase = liftM2 (,) testData testData
 
--- | Retrieve test files, either
+-- | Retrieve the zip archive located at the specified URL
+-- | and unzip the contents.
+downloadTestArchive :: B.ByteString -> ConnEnv IO TestContent
+downloadTestArchive url = do
+  zipFile <- BL.fromChunks . return <$> retrievePublicPage url
+  zipEntries <- tryIOMsg "Failed to unpack zip file: corrupt archive" $
+    E.evaluate (zEntries $ toArchive zipFile)
+  tryAssert "Failed to unpack zip file: no content" $ length zipEntries > 0
+  return $ map convertEntry zipEntries
+  where
+  convertEntry entry = (B.pack $ eRelativePath entry, fold . BL.toChunks $ fromEntry entry)
+
+-- | Retrieve test files, which fall into one or several of the following categories:
 -- | (1) nonexistent
 -- | (2) embedded on problem page
--- | (3) linked from problem page 
+-- | (3) zip file linked from problem page
 retrieveTestFiles :: KattisProblem -> ConnEnv IO TestContent
 retrieveTestFiles problem = do
   problemName <- retrieveProblemName problem
@@ -206,7 +224,7 @@ retrieveTestFiles problem = do
     NoTestsAvailable -> do
       tryIO $ B.hPutStrLn stderr "No tests available"
       return []
-    TestAddress addr -> undefined -- downloadTestArchive addr
+    TestAddress addr -> downloadTestArchive addr
     TestContents list -> return list
 
 initializeProblem :: KattisProblem -> Bool -> Bool -> ConnEnv IO ()
