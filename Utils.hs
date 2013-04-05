@@ -3,7 +3,7 @@
 
 module Utils where
 
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<*))
 import Control.Error hiding (tryIO)
 import qualified Control.Exception as E
 import Control.Monad.Reader
@@ -36,10 +36,10 @@ loginSuccess = "Login successful"
 configDir :: B.ByteString
 configDir = ".sofie"
 
-inputTestExtension :: B.ByteString
+inputTestExtension :: FilePath
 inputTestExtension = ".in"
 
-outputTestExtension :: B.ByteString
+outputTestExtension :: FilePath
 outputTestExtension = ".ans"
 
 problemAddress :: B.ByteString
@@ -134,54 +134,68 @@ data TestParser
   | TestContents TestContent
   deriving Show
 
--- parse the three different test file cases
+-- | Parse the three different test file cases.
 parseProblemPage :: B.ByteString -> TestParser
 parseProblemPage contents = 
   case res of
-    Left failure -> NoTestsAvailable
+    Left _ -> NoTestsAvailable
     Right test -> test
-  where res = parse (try parseAddress <|> try parseEmbedded) "Test parser" contents
+  where res = parse (try parseAddress <|> parseEmbedded) "Test parser" contents
 
--- TODO: Extract any existing address
--- "<a href='download/sampledata?id=friends'>Download</a>"
+-- | Try to parse a download URL from the supplied data.
+-- | format: "<a href='download/sampledata?id=problem'>Download</a>"
 parseAddress :: GenParser Char st TestParser
-parseAddress = undefined
+parseAddress = do
+  void $ manyTill anyChar (try $ startLink >> lookAhead endParser)
+  TestAddress . B.pack <$> endParser
 
--- TODO: (1) fix handling of newline and spaces (2) verify usage of 'try'
-parseEmbedded :: GenParser Char st TestParser
-parseEmbedded = between startEmbedded endEmbedded tableBody
   where
-  startEmbedded = string "<table class=\"sample\" summary=\"sample data\">"
-  endEmbedded  = string "</table>"
+  startLink = string "<a href='"
+  endLink name = string ">" >> string name >> string "</a>"
+  endParser = manyTill anyChar (char '\'') <* endLink "Download"
 
+-- | Try to parse test cases embedded into HTML data.
+-- | Currently only table-style test cases are supported (e.g. problem 'friends').
+parseEmbedded :: GenParser Char st TestParser
+parseEmbedded = TestContents <$> tests 
+  where
+  sp = skipMany $ space <|> newline <|> tab
+  beginTag tag = void $ char '<' >> sp >> string tag >> sp >> char '>'
+  endTag tag = void $ char '<' >> sp >> char '/' >> string tag >> sp >> char '>'
   htmlTag tag p = do
     sp >> beginTag tag >> sp
     manyTill p $ try $ endTag tag
 
-  sp = skipMany $ skipMany $ space <|> newline <|> tab
-  beginTag tag = char '<' >> spaces >> tag >> spaces >> char '>'
-  endTag tag = char '<' >> spaces >> char '/' >> tag >> spaces >> char '>'
+  tr = htmlTag "tr"
+  td = htmlTag "td"
+  pre = htmlTag "pre"
 
-  tr = htmlTag $ string "tr"
-  td = htmlTag $ string "td"
-  pre = htmlTag $ string "pre"
+  tests = manyTill anyChar (lookAhead startTable) >> endBy1 testTable sp
+
+  startTable = void . try $ string "<table class=\"sample\" summary=\"sample data\">"
+  endTable  = void $ string "</table>"
+
+  testTable = do
+    startTable
+    inner <- tableBody
+    sp >> endTable
+    return inner
 
   tableBody = do
-    tr anyChar
-    TestContents <$> many1 (fold <$> htmlTag (string "tr") testCase)
+    void $ tr anyChar
+    try (fold <$> tr testCase) <* sp
 
-  testData = liftM fold $ td $ do
-    spaces
-    newline
-    beginTag $ string "pre"
-    B.pack <$> manyTill anyChar (try $ endTag $ string "pre")
+  innerTestData = do
+    sp
+    B.pack <$> pre anyChar <* sp
 
+  testData = liftM fold $ td innerTestData <* sp
   testCase = liftM2 (,) testData testData
 
--- retrieve test files, either
--- (1) nonexistent
--- (2) embedded on problem page
--- (3) linked from problem page 
+-- | Retrieve test files, either
+-- | (1) nonexistent
+-- | (2) embedded on problem page
+-- | (3) linked from problem page 
 retrieveTestFiles :: KattisProblem -> ConnEnv IO TestContent
 retrieveTestFiles problem = do
   problemName <- retrieveProblemName problem
@@ -192,7 +206,7 @@ retrieveTestFiles problem = do
     NoTestsAvailable -> do
       tryIO $ B.hPutStrLn stderr "No tests available"
       return []
-    TestAddress addr -> undefined
+    TestAddress addr -> undefined -- downloadTestArchive addr
     TestContents list -> return list
 
 initializeProblem :: KattisProblem -> Bool -> Bool -> ConnEnv IO ()
@@ -207,6 +221,6 @@ initializeProblem problem mkDir retrieveTests = do
     files <- zip [1..] <$> retrieveTestFiles problem
     mapM_ (\(n :: Integer, (input, output)) -> do
       let fileName = B.unpack $ problemName <> "-" <> B.pack (show n)
-      tryIO $ B.writeFile (fileName <> ".in") input
-      tryIO $ B.writeFile (fileName <> ".ans") output)
+      tryIO $ B.writeFile (fileName <> inputTestExtension) input
+      tryIO $ B.writeFile (fileName <> outputTestExtension) output)
       files
