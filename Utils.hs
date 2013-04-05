@@ -11,7 +11,7 @@ import Control.Monad.Reader
 import qualified Data.ByteString.Char8 as B
 import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Foldable (fold)
-import Data.List (find)
+import Data.List (find, isSuffixOf)
 import Data.Monoid ((<>))
 import Network.Http.Client
 import System.Exit (exitFailure)
@@ -44,8 +44,11 @@ inputTestExtension = ".in"
 outputTestExtension :: FilePath
 outputTestExtension = ".ans"
 
+testFolder :: FilePath
+testFolder = "tests"
+
 problemAddress :: B.ByteString
-problemAddress = "problems/"
+problemAddress = "/problems/"
 
 noAuth :: (Monad m, MonadTrans t) => EitherT e m a -> EitherT e (t m) a
 noAuth = EitherT . lift . runEitherT
@@ -205,10 +208,23 @@ downloadTestArchive url = do
   zipFile <- BL.fromChunks . return <$> retrievePublicPage url
   zipEntries <- tryIOMsg "Failed to unpack zip file: corrupt archive" $
     E.evaluate (zEntries $ toArchive zipFile)
-  tryAssert "Failed to unpack zip file: no content" $ length zipEntries > 0
-  return $ map convertEntry zipEntries
+
+  let filterFiles suffix = filter (isSuffixOf suffix . eRelativePath) zipEntries
+      inFiles = filterFiles inputTestExtension
+      outFiles = filterFiles outputTestExtension
+
+  tryAssert "Failed to unpack zip file: no test files found" $
+    length zipEntries > 0
+  tryAssert "Failed to unpack zip file: input and reference count doesn't match" $
+    length inFiles == length outFiles
+
+  return $ map convertEntry $ zip inFiles outFiles
   where
-  convertEntry entry = (B.pack $ eRelativePath entry, fold . BL.toChunks $ fromEntry entry)
+  convertEntry entry = (getData $ fst entry, getData $ snd entry)
+  getData = fold . BL.toChunks . fromEntry
+
+  -- should Partition files into in and ans files, then match them
+  -- check that there are an equivalent amount of each
 
 -- | Retrieve test files, which fall into one or several of the following categories:
 -- | (1) nonexistent
@@ -236,9 +252,10 @@ initializeProblem problem mkDir retrieveTests = do
 
   tryIO $ createDirectoryIfMissing False (B.unpack configDir)
   when retrieveTests $ do
+    tryIO $ createDirectory testFolder
     files <- zip [1..] <$> retrieveTestFiles problem
     mapM_ (\(n :: Integer, (input, output)) -> do
-      let fileName = B.unpack $ problemName <> "-" <> B.pack (show n)
+      let fileName = testFolder <> "/" <> B.unpack problemName <> "-" <> show n
       tryIO $ B.writeFile (fileName <> inputTestExtension) input
-      tryIO $ B.writeFile (fileName <> outputTestExtension) output)
+      tryIO $ B.writeFile (fileName <>  outputTestExtension) output)
       files
