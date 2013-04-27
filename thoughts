@@ -22,8 +22,6 @@ rev1: sofie init <problem> [-p]
       print if ever accepted
 
 Current TODO list:
-  * Add support for project-specific configuration and state, load & save.
-  * Add support for detecting project-specific state and fallback in init-function.
   * Add proper CLI for choosing a submodule or launching help section.
   * Add basic stats command
   * Expand submit command to read specified files, or find them, and language id.

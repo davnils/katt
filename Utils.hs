@@ -13,7 +13,6 @@ import Data.List (find)
 import Data.Monoid ((<>))
 import Network.Http.Client
 import System.Exit (exitFailure)
-import System.Directory
 import System.IO (stderr)
 import System.IO.Streams (readExactly)
 
@@ -62,8 +61,8 @@ testFolder = "tests"
 problemAddress :: B.ByteString
 problemAddress = "/problems/"
 
-noAuth :: (Monad m, MonadTrans t) => EitherT e m a -> EitherT e (t m) a
-noAuth = EitherT . lift . runEitherT
+unWrapTrans :: (Monad m, MonadTrans t) => EitherT e m a -> EitherT e (t m) a
+unWrapTrans = EitherT . lift . runEitherT
 
 tryIO :: MonadIO m => IO a -> EitherT ErrorDesc m a
 tryIO = EitherT . liftIO . liftM (fmapL (B.pack . show)) . 
@@ -102,7 +101,7 @@ retrievePrivatePage page = do
   header <- makeSignedRequest $ do
     http GET page
     defaultRequest
-  noAuth $ makeRequest header
+  unWrapTrans $ makeRequest header
 
 makeRequest :: Request -> ConnEnv IO B.ByteString
 makeRequest header = do

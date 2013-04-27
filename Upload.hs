@@ -28,7 +28,7 @@ buildChunk (File path) = do
   return $ B.intercalate crlf [headerLine, "Content-Type: text/x-c++src", "", file, ""]
   where
     headerLine = B.intercalate "; " ["Content-Disposition: form-data", "name=\"sub_file[]\"",
-                                     B.concat ["filename=\"", (B.pack path), "\""]]
+                                     B.concat ["filename=\"", B.pack path, "\""]]
 
 buildChunk (Option fields payload) = return $ B.intercalate crlf [headerLine, "", payload, ""]
   where

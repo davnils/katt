@@ -5,6 +5,8 @@ module Init (initializeProblem) where
 
 import Control.Applicative ((<$>), (<*))
 import Codec.Archive.Zip
+import Control.Arrow ((***))
+import qualified Control.Monad.State as S
 import qualified Configuration as C
 import Control.Error hiding (tryIO)
 import qualified Control.Exception as E
@@ -41,7 +43,7 @@ parseProblemPage contents =
 parseAddress :: GenParser Char st TestParser
 parseAddress = do
   void $ manyTill anyChar (try $ startLink >> lookAhead endParser)
-  TestAddress . (B.cons '/') . B.pack <$> endParser
+  TestAddress . B.cons '/' . B.pack <$> endParser
 
   where
   startLink = string "<a href='"
@@ -99,13 +101,13 @@ downloadTestArchive url = do
       outFiles = filterFiles outputTestExtension
 
   tryAssert "Failed to unpack zip file: no test files found" $
-    length zipEntries > 0
+    not (null zipEntries)
   tryAssert "Failed to unpack zip file: input and reference count doesn't match" $
     length inFiles == length outFiles
 
-  return $ map convertEntry $ zip inFiles outFiles
+  return $ zipWith (curry convertEntry) inFiles outFiles
   where
-  convertEntry entry = (getData $ fst entry, getData $ snd entry)
+  convertEntry = getData *** getData
   getData = fold . BL.toChunks . fromEntry
 
   -- should Partition files into in and ans files, then match them
@@ -128,6 +130,8 @@ retrieveTestFiles problem = do
     TestAddress addr -> downloadTestArchive addr
     TestContents list -> return list
 
+-- Given a problem identifier, setup directory structures and
+-- optionally download test cases.
 initializeProblem :: KattisProblem -> Bool -> Bool -> ConnEnv IO ()
 initializeProblem problem mkDir retrieveTests = do
   problemName <- retrieveProblemName problem
@@ -136,6 +140,15 @@ initializeProblem problem mkDir retrieveTests = do
     setCurrentDirectory (B.unpack problemName)
 
   tryIO $ createDirectoryIfMissing False (B.unpack configDir)
+
+  fileExists <- liftIO C.projectConfigExists
+  tryAssert
+    "Project configuration file already exists, please remove it in order to continue."
+    (not fileExists)
+
+  lift . S.modify $ \s -> s { project = Just $ ProblemName problemName }
+  C.saveProjectConfig
+
   when retrieveTests $ do
     tryIO $ createDirectory testFolder
     files <- zip [1..] <$> retrieveTestFiles problem

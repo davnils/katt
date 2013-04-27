@@ -30,7 +30,7 @@ runProgram conf problem = withOpenSSL $ do
   closeConnection conn
 
   where
-  initialize conn = runReaderT (terminateOnFailure "Failed to initialize problem" go) conn
+  initialize = runReaderT (terminateOnFailure "Failed to initialize problem" go)
   go = do
     -- testData <- downloadTestArchive "/download/sampledata?id=maxloot"
     -- liftIO $ print testData
