@@ -21,28 +21,42 @@ import System.IO.Streams (readExactly)
 import Text.Parsec hiding (token)
 import Text.Parsec.ByteString
 
-type ConnEnvInternal m = ReaderT Connection m
+type ConfigEnv m = ReaderT ConfigState m
+type ConnEnvInternal m = ReaderT Connection (ConfigEnv m)
 type ConnEnv m = EitherT ErrorDesc (ConnEnvInternal m)
 type AuthEnv m = EitherT ErrorDesc (ReaderT B.ByteString (ConnEnvInternal m))
+
 type Submission = (KattisProblem, [FilePath])
 type ErrorDesc = B.ByteString
 type SubmissionId = Integer
+type ProjectState = (KattisProblem)
+
+data ConfigState = ConfigState {
+  user :: B.ByteString,
+  apiKey :: B.ByteString,
+  host :: B.ByteString,
+  loginPage :: B.ByteString,
+  submitPage :: B.ByteString,
+  project :: Maybe ProjectState
+  }
+  deriving Show
 
 data KattisProblem
   = ProblemId Integer
   | ProblemName B.ByteString
+  deriving Show
 
 loginSuccess :: B.ByteString
 loginSuccess = "Login successful"
-
-configDir :: B.ByteString
-configDir = ".sofie"
 
 inputTestExtension :: FilePath
 inputTestExtension = ".in"
 
 outputTestExtension :: FilePath
 outputTestExtension = ".ans"
+
+configDir :: B.ByteString
+configDir = ".sofie"
 
 testFolder :: FilePath
 testFolder = "tests"
@@ -98,21 +112,17 @@ makeRequest header = do
   tryIO $ sendRequest conn header emptyBody
   tryIO $ receiveResponse conn concatHandler
 
--- TODO: Move these to configuration
-host, user, token, loginPage :: B.ByteString
-host = "https://kth.kattis.scrool.se"
-user = "davnils"
-token = ""
-loginPage = "/login"
-
 authenticate :: ConnEnv IO B.ByteString
 authenticate = do
+  page <- lift . lift $ asks loginPage
   header <- tryIO . buildRequest $ do
-    http POST loginPage
+    http POST ("/" <> page)
     defaultRequest
     setContentType "application/x-www-form-urlencoded"
 
-  let formData = [("token", token), ("user", user), ("script", "true")] 
+  conf <- lift $ lift ask
+
+  let formData = [("token", apiKey conf), ("user", user conf), ("script", "true")] 
   conn <- ask
   tryIO . sendRequest conn header $ encodedFormBody formData
 
