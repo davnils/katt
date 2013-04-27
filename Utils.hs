@@ -3,26 +3,23 @@
 
 module Utils where
 
-import Codec.Archive.Zip
-import Control.Applicative ((<$>), (<*))
+import Control.Applicative ((<$>))
 import Control.Error hiding (tryIO)
 import qualified Control.Exception as E
 import Control.Monad.Reader
+import qualified Control.Monad.State as S
 import qualified Data.ByteString.Char8 as B
-import qualified Data.ByteString.Lazy.Char8 as BL
-import Data.Foldable (fold)
-import Data.List (find, isSuffixOf)
+import Data.List (find)
 import Data.Monoid ((<>))
 import Network.Http.Client
 import System.Exit (exitFailure)
 import System.Directory
 import System.IO (stderr)
 import System.IO.Streams (readExactly)
-import Text.Parsec hiding (token)
-import Text.Parsec.ByteString
 
-type ConfigEnv m = ReaderT ConfigState m
-type ConnEnvInternal m = ReaderT Connection (ConfigEnv m)
+type ConfigEnvInternal m = S.StateT ConfigState m
+type ConfigEnv m = EitherT ErrorDesc (ConfigEnvInternal m)
+type ConnEnvInternal m = ReaderT Connection (ConfigEnvInternal m)
 type ConnEnv m = EitherT ErrorDesc (ConnEnvInternal m)
 type AuthEnv m = EitherT ErrorDesc (ReaderT B.ByteString (ConnEnvInternal m))
 
@@ -31,13 +28,14 @@ type ErrorDesc = B.ByteString
 type SubmissionId = Integer
 type ProjectState = (KattisProblem)
 
-data ConfigState = ConfigState {
-  user :: B.ByteString,
-  apiKey :: B.ByteString,
-  host :: B.ByteString,
-  loginPage :: B.ByteString,
-  submitPage :: B.ByteString,
-  project :: Maybe ProjectState
+data ConfigState =
+  ConfigState {
+    user :: B.ByteString,
+    apiKey :: B.ByteString,
+    host :: B.ByteString,
+    loginPage :: B.ByteString,
+    submitPage :: B.ByteString,
+    project :: Maybe ProjectState
   }
   deriving Show
 
@@ -114,13 +112,13 @@ makeRequest header = do
 
 authenticate :: ConnEnv IO B.ByteString
 authenticate = do
-  page <- lift . lift $ asks loginPage
+  conf <- lift $ lift S.get
+
   header <- tryIO . buildRequest $ do
-    http POST ("/" <> page)
+    http POST ("/" <> loginPage conf)
     defaultRequest
     setContentType "application/x-www-form-urlencoded"
 
-  conf <- lift $ lift ask
 
   let formData = [("token", apiKey conf), ("user", user conf), ("script", "true")] 
   conn <- ask
@@ -144,128 +142,3 @@ retrieveProblemId (ProblemName _) = undefined
 retrieveProblemName :: KattisProblem -> ConnEnv IO B.ByteString
 retrieveProblemName (ProblemId _) = undefined
 retrieveProblemName (ProblemName name) = return name
-
-type TestContent = [(B.ByteString, B.ByteString)]
-
-data TestParser
-  = NoTestsAvailable
-  | TestAddress B.ByteString
-  | TestContents TestContent
-  deriving Show
-
--- | Parse the three different test file cases.
-parseProblemPage :: B.ByteString -> TestParser
-parseProblemPage contents = 
-  case res of
-    Left _ -> NoTestsAvailable
-    Right test -> test
-  where res = parse (try parseAddress <|> parseEmbedded) "Test parser" contents
-
--- | Try to parse a download URL from the supplied data.
--- | format: "<a href='download/sampledata?id=problem'>Download</a>"
-parseAddress :: GenParser Char st TestParser
-parseAddress = do
-  void $ manyTill anyChar (try $ startLink >> lookAhead endParser)
-  TestAddress . (B.cons '/') . B.pack <$> endParser
-
-  where
-  startLink = string "<a href='"
-  endLink name = string ">" >> string name >> string "</a>"
-  endParser = manyTill anyChar (char '\'') <* endLink "Download"
-
--- | Try to parse test cases embedded into HTML data.
--- | Currently only table-style test cases are supported (e.g. problem 'friends').
-parseEmbedded :: GenParser Char st TestParser
-parseEmbedded = TestContents <$> tests 
-  where
-  sp = skipMany $ space <|> newline <|> tab
-  beginTag tag = void $ char '<' >> sp >> string tag >> sp >> char '>'
-  endTag tag = void $ char '<' >> sp >> char '/' >> string tag >> sp >> char '>'
-  htmlTag tag p = do
-    sp >> beginTag tag >> sp
-    manyTill p $ try $ endTag tag
-
-  tr = htmlTag "tr"
-  td = htmlTag "td"
-  pre = htmlTag "pre"
-
-  tests = manyTill anyChar (lookAhead startTable) >> endBy1 testTable sp
-
-  startTable = void . try $ string "<table class=\"sample\" summary=\"sample data\">"
-  endTable  = void $ string "</table>"
-
-  testTable = do
-    startTable
-    inner <- tableBody
-    sp >> endTable
-    return inner
-
-  tableBody = do
-    void $ tr anyChar
-    try (fold <$> tr testCase) <* sp
-
-  innerTestData = do
-    sp
-    B.pack <$> pre anyChar <* sp
-
-  testData = liftM fold $ td innerTestData <* sp
-  testCase = liftM2 (,) testData testData
-
--- | Retrieve the zip archive located at the specified URL
--- | and unzip the contents.
-downloadTestArchive :: B.ByteString -> ConnEnv IO TestContent
-downloadTestArchive url = do
-  zipFile <- BL.fromChunks . return <$> retrievePublicPage url
-  zipEntries <- tryIOMsg "Failed to unpack zip file: corrupt archive" $
-    E.evaluate (zEntries $ toArchive zipFile)
-
-  let filterFiles suffix = filter (isSuffixOf suffix . eRelativePath) zipEntries
-      inFiles = filterFiles inputTestExtension
-      outFiles = filterFiles outputTestExtension
-
-  tryAssert "Failed to unpack zip file: no test files found" $
-    length zipEntries > 0
-  tryAssert "Failed to unpack zip file: input and reference count doesn't match" $
-    length inFiles == length outFiles
-
-  return $ map convertEntry $ zip inFiles outFiles
-  where
-  convertEntry entry = (getData $ fst entry, getData $ snd entry)
-  getData = fold . BL.toChunks . fromEntry
-
-  -- should Partition files into in and ans files, then match them
-  -- check that there are an equivalent amount of each
-
--- | Retrieve test files, which fall into one or several of the following categories:
--- | (1) nonexistent
--- | (2) embedded on problem page
--- | (3) zip file linked from problem page
-retrieveTestFiles :: KattisProblem -> ConnEnv IO TestContent
-retrieveTestFiles problem = do
-  problemName <- retrieveProblemName problem
-  problemPage <- retrievePublicPage $ problemAddress <> problemName
-
-  -- determine which of the three cases apply to this problem
-  case parseProblemPage problemPage of
-    NoTestsAvailable -> do
-      tryIO $ B.hPutStrLn stderr "No tests available"
-      return []
-    TestAddress addr -> downloadTestArchive addr
-    TestContents list -> return list
-
-initializeProblem :: KattisProblem -> Bool -> Bool -> ConnEnv IO ()
-initializeProblem problem mkDir retrieveTests = do
-  problemName <- retrieveProblemName problem
-  tryIO . when mkDir $ do
-    createDirectoryIfMissing False (B.unpack problemName)
-    setCurrentDirectory (B.unpack problemName)
-
-  tryIO $ createDirectoryIfMissing False (B.unpack configDir)
-  when retrieveTests $ do
-    tryIO $ createDirectory testFolder
-    files <- zip [1..] <$> retrieveTestFiles problem
-    mapM_ (\(n :: Integer, (input, output)) -> do
-      let fileName = testFolder <> "/" <> B.unpack problemName <> "-" <> show n
-      tryIO $ B.writeFile (fileName <> inputTestExtension) input
-      tryIO $ B.writeFile (fileName <>  outputTestExtension) output)
-      files

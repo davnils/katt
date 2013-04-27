@@ -2,8 +2,10 @@
 
 import qualified Configuration as C
 import Control.Monad.Reader
+import Control.Monad.State
 import qualified Data.ByteString.Char8 as B
 import Data.Monoid ((<>))
+import Init
 import Network.Http.Client
 import OpenSSL
 import System.Environment
@@ -24,7 +26,7 @@ main = do
 runProgram conf problem = withOpenSSL $ do
   conn <- establishConnection (host conf)
   B.putStrLn $ "Retrieving problem: " <> problem
-  runReaderT (initialize conn) conf
+  evalStateT (initialize conn) conf
   closeConnection conn
 
   where
