@@ -52,8 +52,11 @@ inputTestExtension = ".in"
 outputTestExtension :: FilePath
 outputTestExtension = ".ans"
 
+programName :: B.ByteString
+programName = "sofie"
+
 configDir :: B.ByteString
-configDir = ".sofie"
+configDir = "." <> programName
 
 testFolder :: FilePath
 testFolder = "tests"

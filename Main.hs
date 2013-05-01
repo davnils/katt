@@ -10,7 +10,7 @@ import Network.Http.Client
 import OpenSSL
 import System.Environment
 import System.Exit (exitFailure)
--- import Upload
+import Upload
 import Utils
 
 main :: IO ()
@@ -20,22 +20,34 @@ main = do
     Left err -> B.putStrLn ("Kattis configuration error: " <> err) >> exitFailure
     Right c -> return c
 
-  (problem : []) <- getArgs
-  runProgram conf' (B.pack problem)
+  withOpenSSL $ parseArgs conf'
 
-runProgram conf problem = withOpenSSL $ do
-  conn <- establishConnection (host conf)
-  B.putStrLn $ "Retrieving problem: " <> problem
-  evalStateT (initialize conn) conf
-  closeConnection conn
+parseArgs :: ConfigState -> IO ()
+parseArgs conf = getArgs >>= parse
 
   where
-  initialize = runReaderT (terminateOnFailure "Failed to initialize problem" go)
-  go = do
-    -- testData <- downloadTestArchive "/download/sampledata?id=maxloot"
-    -- liftIO $ print testData
-    initializeProblem (ProblemName problem) True True
-    {- session <- terminateOnFailure "Authentication failed" authenticate
-    liftIO . B.putStrLn $ "[*] Temporary token: '" <> session <> "'"
-    runReaderT (terminateOnFailure "Submission failed" (submitSolution (ProblemName "hello", ["example.cc"])) >>= liftIO . putStrLn . show) session -}
+  parse :: [String] -> IO ()
+  parse ("init" : problem : []) = withConn conf . initializeProblem True True . ProblemName $ B.pack problem
+  parse ("submit" : _) = withConn conf $ makeSubmission
+  parse _ = printHelp
 
+printHelp :: IO ()
+printHelp = putStrLn $
+  "The following command are available:\n\n" <>
+  "init <problem>\n" <>
+  "  Creates the corresponding directory and downloads any tests.\n\n" <>
+  "submit \n" <>
+  "  Makes a submission using the problem name associated to the current directory.\n" <>
+  "  Defaults to recursively including all source and header files that can be found.\n\n" <>
+  "Note that you will need a valid configuration file (placed in ~/.kattisrc), such as:\n" <>
+  "https://kth.kattis.scrool.se/download/kattisrc\n"
+
+withConn :: ConfigState -> ConnEnv IO a -> IO a
+withConn conf action = do
+  conn <- liftIO $ establishConnection (host conf)
+  (res, _) <- runStateT (withConf conn) conf
+  liftIO $ closeConnection conn
+  return res
+
+  where
+  withConf = runReaderT (terminateOnFailure "Failed to run command" action)

@@ -132,8 +132,8 @@ retrieveTestFiles problem = do
 
 -- Given a problem identifier, setup directory structures and
 -- optionally download test cases.
-initializeProblem :: KattisProblem -> Bool -> Bool -> ConnEnv IO ()
-initializeProblem problem mkDir retrieveTests = do
+initializeProblem :: Bool -> Bool -> KattisProblem -> ConnEnv IO ()
+initializeProblem mkDir retrieveTests problem = do
   problemName <- retrieveProblemName problem
   tryIO . when mkDir $ do
     createDirectoryIfMissing False (B.unpack problemName)

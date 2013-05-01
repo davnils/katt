@@ -1,11 +1,15 @@
-{-# Language OverloadedStrings #-}
+{-# Language OverloadedStrings, ScopedTypeVariables #-}
 
-module Upload where
+module Upload (makeSubmission, submitSolution) where
 
+import Control.Applicative ((<$>))
 import Blaze.ByteString.Builder (fromByteString)
+import qualified Configuration as C
 import Control.Error hiding (tryIO)
 import Control.Monad.Reader
+import qualified Control.Monad.State as S
 import qualified Data.ByteString.Char8 as B
+import Data.Maybe (fromJust)
 import Data.Monoid ((<>))
 import Network.Http.Client
 import System.IO.Streams (write)
@@ -35,6 +39,22 @@ buildChunk (Option fields payload) = return $ B.intercalate crlf [headerLine, ""
     headerLine = B.intercalate "; " fieldList
     fieldList = "Content-Disposition: form-data" : fields
 
+makeSubmission :: ConnEnv IO ()
+makeSubmission = do
+  token <- authenticate 
+
+  exists <- liftIO C.projectConfigExists
+  tryAssert "No project configuration could be found."
+    exists
+
+  unWrapTrans C.loadProjectConfig
+  problem <- lift (fromJust <$> S.gets project)
+
+  -- TODO: locate source and header files
+
+  submission <- EitherT $ runReaderT (runEitherT $ submitSolution (problem, ["main.cc"])) token
+  liftIO . putStrLn $ "Made submission: " <> show submission
+
 submitSolution :: Submission -> AuthEnv IO SubmissionId
 submitSolution (problem, files) = do
   let multiPartSeparator = "separator"
@@ -44,7 +64,7 @@ submitSolution (problem, files) = do
     defaultRequest
     setContentType $ B.append "multipart/form-data; boundary=" multiPartSeparator
 
-  problemName <- noAuth $ retrieveProblemName problem
+  problemName <- unWrapTrans $ retrieveProblemName problem
 
   let postFields = [Option ["name=\"submit\""] "true"]
                 <> [Option ["name=\"submit_ctr\""] "2"]
@@ -58,8 +78,8 @@ submitSolution (problem, files) = do
   conn <- lift . lift $ ask
   tryIO $ sendRequest conn header (\o -> do
     mapM_ (\part -> do
-      serialized <- buildChunk part
-      write (Just . fromByteString $ B.concat ["--", multiPartSeparator, crlf, serialized]) o)
+        serialized <- buildChunk part
+        write (Just . fromByteString $ B.concat ["--", multiPartSeparator, crlf, serialized]) o)
       postFields
 
     write (Just . fromByteString $ B.concat ["--", multiPartSeparator, "--", crlf]) o

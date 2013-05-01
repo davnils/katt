@@ -76,8 +76,8 @@ projectConfigExists = catchIOError open . const $ return False
 loadProjectConfig :: ConfigEnv IO ()
 loadProjectConfig = do
   conf <- fmapLT convertErrorDesc $ join . liftIO $ readfile emptyCP projectConfigFile
-  problem <- get' conf "problem" "problemName"
-  lift . S.modify $ \s -> s { project = Just $ ProblemName problem}
+  problem <- get' conf "problem" "problemname"
+  lift . S.modify $ \s -> s { project = Just . ProblemName $ B.pack problem}
 
 -- | Save a project-specific configuration file.
 saveProjectConfig :: ConnEnv IO ()
@@ -96,4 +96,4 @@ saveProjectConfig = do
     let conf = emptyCP
     conf <- add_section conf "problem"
     conf <- add_section conf "submissions"
-    set conf "problem" "problemName" $ B.unpack problemName
+    set conf "problem" "problemname" $ B.unpack problemName
