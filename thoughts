@@ -22,11 +22,12 @@ rev1: sofie init <problem> [-p]
       print if ever accepted
 
 Current TODO list:
-  * Add proper CLI for choosing a submodule or launching help section.
-  * Add basic stats command
   * Expand submit command to read specified files, or find them, and language id.
     Could accept accept/ignore list from CLI, using +- syntax.
+    Default to all recursively found files and support +- syntax with masks.
+
   * Expand submit to wait for kattis-completion.
   * Cabalize
   * Add documentation.
   * Test.
+  * Add basic stats command

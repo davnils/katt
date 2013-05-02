@@ -1,6 +1,6 @@
 {-# Language OverloadedStrings, ScopedTypeVariables #-}
 
-module Upload (makeSubmission, submitSolution) where
+module Upload (makeSubmission) where
 
 import Control.Applicative ((<$>))
 import Blaze.ByteString.Builder (fromByteString)
@@ -12,6 +12,7 @@ import qualified Data.ByteString.Char8 as B
 import Data.Maybe (fromJust)
 import Data.Monoid ((<>))
 import Network.Http.Client
+import SourceHandler
 import System.IO.Streams (write)
 import Text.Regex.Posix
 import Utils
@@ -39,8 +40,10 @@ buildChunk (Option fields payload) = return $ B.intercalate crlf [headerLine, ""
     headerLine = B.intercalate "; " fieldList
     fieldList = "Content-Disposition: form-data" : fields
 
-makeSubmission :: ConnEnv IO ()
-makeSubmission = do
+makeSubmission :: [String] -> ConnEnv IO ()
+makeSubmission filterArguments = do
+  -- TODO: locate source and header files
+  
   token <- authenticate 
 
   exists <- liftIO C.projectConfigExists
@@ -49,8 +52,6 @@ makeSubmission = do
 
   unWrapTrans C.loadProjectConfig
   problem <- lift (fromJust <$> S.gets project)
-
-  -- TODO: locate source and header files
 
   submission <- EitherT $ runReaderT (runEitherT $ submitSolution (problem, ["main.cc"])) token
   liftIO . putStrLn $ "Made submission: " <> show submission

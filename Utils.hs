@@ -43,6 +43,12 @@ data KattisProblem
   | ProblemName B.ByteString
   deriving Show
 
+data KattisLanguage
+  = LangCplusplus
+  | LangJava
+  | LangC
+  deriving Show
+
 loginSuccess :: B.ByteString
 loginSuccess = "Login successful"
 
