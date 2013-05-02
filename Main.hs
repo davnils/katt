@@ -17,7 +17,10 @@ main :: IO ()
 main = do
   conf <- C.loadGlobalConfig
   conf' <- case conf of
-    Left err -> B.putStrLn ("Kattis configuration error: " <> err) >> exitFailure
+    Left err -> do
+      B.putStrLn $ "Kattis configuration error: " <> err
+      printHelp
+      exitFailure
     Right c -> return c
 
   withOpenSSL $ parseArgs conf'
