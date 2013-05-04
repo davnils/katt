@@ -1,33 +1,7 @@
-Sofie aims to enhance the KATTIS experience (tm) and act as a personal assistant.
-
-rev1: sofie init <problem> [-p]
-      [mkdir workingdir]
-      [cd workingdir]
-      mkdir tests; mkdir .sofie 
-      write .sofie/config with problem id
-      [retrieve all tests]
-
-      sofie submit
-      read .sofie/config, find problem id
-      read all source files in the current dir, recursively
-      determine language, only support for C++
-      make submission, retrieve submission id
-      poll submission id until complete, print status in each step
-      finally register submission id and result in .sofie/results
-
-      sofie stats
-      verify that .sofie exists with necessary files
-      print problem id
-      print all results stored in the current dir as {id} {date/time} {status}
-      print if ever accepted
-
 Current TODO list:
-  * Expand submit command to read specified files, or find them, and language id.
-    Could accept accept/ignore list from CLI, using +- syntax.
-    Default to all recursively found files and support +- syntax with masks.
-
   * Expand submit to wait for kattis-completion.
-  * Cabalize
+  * Cabalize.
   * Add documentation.
+  * Support C and Java.
   * Test.
-  * Add basic stats command
+  * Add basic stats command.
