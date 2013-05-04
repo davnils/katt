@@ -9,6 +9,7 @@ import Control.Error hiding (tryIO)
 import Control.Monad.Reader
 import qualified Control.Monad.State as S
 import qualified Data.ByteString.Char8 as B
+import Data.List ((\\), union)
 import Data.Maybe (fromJust)
 import Data.Monoid ((<>))
 import Network.Http.Client
@@ -16,9 +17,6 @@ import SourceHandler
 import System.IO.Streams (write)
 import Text.Regex.Posix
 import Utils
-
-uploadPage :: B.ByteString
-uploadPage = "/judge_upload"
 
 crlf :: B.ByteString
 crlf = "\r\n"
@@ -42,10 +40,6 @@ buildChunk (Option fields payload) = return $ B.intercalate crlf [headerLine, ""
 
 makeSubmission :: [String] -> ConnEnv IO ()
 makeSubmission filterArguments = do
-  -- TODO: locate source and header files
-  
-  token <- authenticate 
-
   exists <- liftIO C.projectConfigExists
   tryAssert "No project configuration could be found."
     exists
@@ -53,15 +47,27 @@ makeSubmission filterArguments = do
   unWrapTrans C.loadProjectConfig
   problem <- lift (fromJust <$> S.gets project)
 
-  submission <- EitherT $ runReaderT (runEitherT $ submitSolution (problem, ["main.cc"])) token
+  files <- tryIOMsg "Failed to locate source files" findFiles
+  let adjusted = adjust (parseFilter filterArguments) files
+
+  liftIO $ mapM_ (putStrLn . ("Adding file: "++)) adjusted
+
+  token <- authenticate 
+  submission <- EitherT $ runReaderT
+    (runEitherT $ submitSolution (problem, adjusted)) token
   liftIO . putStrLn $ "Made submission: " <> show submission
+
+  where
+  adjust Nothing files = files
+  adjust (Just (add, sub)) files = union (files \\ sub) add
 
 submitSolution :: Submission -> AuthEnv IO SubmissionId
 submitSolution (problem, files) = do
   let multiPartSeparator = "separator"
 
+  conf <- lift . lift $ lift S.get
   header <- makeSignedRequest $ do
-    http POST uploadPage
+    http POST ("/" <> submitPage conf)
     defaultRequest
     setContentType $ B.append "multipart/form-data; boundary=" multiPartSeparator
 

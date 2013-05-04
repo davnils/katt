@@ -3,24 +3,43 @@
 module SourceHandler (parseFilter, findFiles, determineLanguage, findMainClass) where
 
 import Control.Applicative
+import Control.Arrow ((***))
+import Control.Monad
 import qualified Data.ByteString.Char8 as B
+import Data.List
 import System.Directory
 import System.IO
 import Utils
 
--- | Parse an argument list in the +file1 -file2 style into
---   two lists of file paths (included and ignored files).
---   TODO: Complete.
-parseFilter :: [String] -> Maybe ([FilePath], [FilePath])
-parseFilter = join . go
-  where
-  go (('+' : file) : l) = Just (file, []) : go l
-  go (('-' : file) : l) = Just ([], [file]) : go l
-  go _ = Nothing
+-- | All supported source file extensions.
+supportedExtensions :: [String]
+supportedExtensions = [".cc", ".hpp", ".cpp", ".c", ".h"]
 
--- | Locate all source files recusively from the current directory.
+-- | Parse an argument list from the +file1 -file2 style into
+--   two lists of file paths (included and ignored files).
+parseFilter :: [String] -> Maybe ([FilePath], [FilePath])
+parseFilter input = (filter' *** filter') <$> mapAndUnzipM go input
+  where
+  go ('+' : file) = Just (file, "")
+  go ('-' : file) = Just ("", file)
+  go _ = Nothing
+  filter' = filter (not . null)
+
+-- | Locate all source files recursively from the current directory.
 findFiles :: IO [FilePath]
-findFiles = filterstuff $ mapM_ findFiles <$> getDirectoryContents
+findFiles = explore "" "."
+  where
+  explore prefix dir = do
+    contents <- (\\ [".", ".."]) <$> getDirectoryContents dir
+    let withPrefix = map (prefix++) contents
+
+    dirs <- filterM doesDirectoryExist withPrefix
+    let sourceFiles = filter isValidSourceFile (withPrefix \\ dirs)
+    nextDepth <- mapM exploreDir dirs
+    return $ sourceFiles ++ concat nextDepth
+
+  isValidSourceFile file = any (`isSuffixOf` file) supportedExtensions
+  exploreDir dir = explore (dir ++ "/") dir
 
 -- | Determine source code language based on file extensions.
 determineLanguage :: [FilePath] -> Maybe KattisLanguage
