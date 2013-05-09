@@ -1,7 +1,7 @@
 {-# Language OverloadedStrings, ScopedTypeVariables,
     NoMonomorphismRestriction #-}
 
-module Init (initializeProblem) where
+module Init (initializeProblem, initializeSession) where
 
 import Control.Applicative ((<$>), (<*))
 import Codec.Archive.Zip
@@ -14,7 +14,7 @@ import Control.Monad.Reader
 import qualified Data.ByteString.Char8 as B
 import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Foldable (fold)
-import Data.List (isSuffixOf)
+import Data.List (isSuffixOf, nub)
 import Data.Monoid ((<>))
 import System.Directory
 import System.IO (stderr)
@@ -130,10 +130,35 @@ retrieveTestFiles problem = do
     TestAddress addr -> downloadTestArchive addr
     TestContents list -> return list
 
+sessionPage :: B.ByteString
+sessionPage = "/standings/?sid="
+
+parseProblemList :: GenParser Char st [KattisProblem]
+parseProblemList = skip >> endBy1 tag skip
+  where
+  beginLink = string "<a href='problems/"
+  skip = manyTill anyChar (void (try beginLink) <|> eof)
+  tag = do
+    problem <- manyTill (letter <|> digit) (char '\'')
+    return . ProblemName $ B.pack problem
+
+-- Given a problem session id, call initializeProblem
+-- for each of the problems available, or return with none available.
+initializeSession :: Bool -> ProblemSession -> ConnEnv IO ()
+initializeSession retrieveTests session = do
+  contents <- retrievePublicPage $ sessionPage <> (B.pack $ show session)
+  problems <- nub <$> (EitherT . return  . fmapL (B.pack . show) $ parse' contents)
+  mapM_ (\problem -> initializeProblem True retrieveTests problem >> restoreDir) problems
+  where
+  parse' contents = parse (parseProblemList) "Problem list parser" contents
+  restoreDir = liftIO $ setCurrentDirectory ".."
+  -- TODO: restore to previously used directory
+
 -- Given a problem identifier, setup directory structures and
 -- optionally download test cases.
 initializeProblem :: Bool -> Bool -> KattisProblem -> ConnEnv IO ()
 initializeProblem mkDir retrieveTests problem = do
+  liftIO . putStrLn $ "Initializing problem: " <> show problem
   problemName <- retrieveProblemName problem
   tryIO . when mkDir $ do
     createDirectoryIfMissing False (B.unpack problemName)

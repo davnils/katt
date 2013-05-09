@@ -25,6 +25,7 @@ type AuthEnv m = EitherT ErrorDesc (ReaderT B.ByteString (ConnEnvInternal m))
 type Submission = (KattisProblem, [FilePath])
 type ErrorDesc = B.ByteString
 type SubmissionId = Integer
+type ProblemSession = Integer
 type ProjectState = (KattisProblem)
 
 data ConfigState =
@@ -41,13 +42,13 @@ data ConfigState =
 data KattisProblem
   = ProblemId Integer
   | ProblemName B.ByteString
-  deriving Show
+  deriving (Eq, Show)
 
 data KattisLanguage
   = LangCplusplus
   | LangJava
   | LangC
-  deriving Show
+  deriving (Eq, Show)
 
 loginSuccess :: B.ByteString
 loginSuccess = "Login successful"

@@ -31,6 +31,7 @@ parseArgs conf = getArgs >>= parse
   where
   parse :: [String] -> IO ()
   parse ("init" : problem : []) = withConn conf . initializeProblem True True . ProblemName $ B.pack problem
+  parse ("init-session" : session : []) = withConn conf . initializeSession True $ read session
   parse ("submit" : filterList) = withConn conf $ makeSubmission filterList
   parse _ = printHelp
 
