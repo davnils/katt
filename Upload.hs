@@ -1,6 +1,6 @@
 {-# Language OverloadedStrings, ScopedTypeVariables #-}
 
-module Upload (makeSubmission, parseSubmission, parseStatus, parseTestCases) where
+module Upload (makeSubmission) where
 
 import Control.Applicative ((<$>))
 import Blaze.ByteString.Builder (fromByteString)
@@ -72,7 +72,7 @@ makeSubmission filterArguments = do
     exists
 
   unWrapTrans C.loadProjectConfig
-  problem <- lift (fromJust <$> S.gets project)
+  problem <- lift . lift $ (fromJust <$> S.gets project)
 
   files <- tryIOMsg "Failed to locate source files" findFiles
   let adjusted = adjust (parseFilter filterArguments) files
@@ -80,50 +80,51 @@ makeSubmission filterArguments = do
   liftIO $ mapM_ (putStrLn . ("Adding file: "++)) adjusted
 
   token <- authenticate 
+  submission <- EitherT $ runReaderT
+    (runEitherT $ submitSolution (problem, adjusted)) token
+
+  tryIO . putStrLn $ "Made submission: " <> show submission
+  tryIO $ threadDelay initialTimeout
+  reestablishConnection
+
+  token' <- authenticate 
   EitherT $ runReaderT
-    (runEitherT $ do
-      submission <- submitSolution (problem, adjusted)
-      liftIO . putStrLn $ "Made submission: " <> show submission
-      checkSubmission submission
-    ) token
+    (runEitherT $ checkSubmission submission) token'
 
   where
   adjust Nothing files = files
   adjust (Just (add, sub)) files = union (files \\ sub) add
+  initialTimeout = 2000000
 
--- | Poll kattis for updates on the specified submission.
+-- | Poll kattis for updates on a submission.
 -- possible states:
 -- (1) queued
 -- (2) running
--- (3) final: wrong answer, time limit exceeded, accepted, other
+-- (3) final: wrong answer, time limit exceeded, accepted, and others
 --
 -- This function returns when the submission has reached one of the final states.
 -- TODO: Consider exponential back-off and timeout
 checkSubmission :: SubmissionId -> AuthEnv IO ()
 checkSubmission submission = do
-  liftIO $ threadDelay interval
   page <- retrievePrivatePage $ "/" <> submissionPage <> "?id=" <> B.pack (show submission)
-  liftIO $ B.putStrLn $ "Retrieved the following page:\n" <> page
   let (state, tests) = parseSubmission page
-
-  liftIO $ putStrLn $ "state: " <> show state
-  liftIO $ putStrLn $ "tests: " <> show tests
 
   if finalSubmissionState state
     then
       liftIO $ printResult tests state
     else do
-      liftIO $ putStrLn "Waiting for completion.." >> threadDelay interval
+      tryIO $ putStrLn "Waiting for completion.." >> threadDelay interval
       checkSubmission submission
+      unWrapTrans reestablishConnection
    
    where
-   interval = 500000
+   interval = 1000000
 
 parseSubmission :: B.ByteString -> (SubmissionState, [TestCase])
 parseSubmission contents =
   case res of
     Left _ -> error "Internal parser error"
-    Right asd -> asd
+    Right res' -> res'
   where
   res = parse parser "Submission parser" contents
   parser = do
@@ -143,7 +144,7 @@ parseStatus = skip >> status
     return $ conv statusStr
 
   conv "Time Limit Exceeded" = TimeLimitExceeded
-  conv "Wrong Answer" = TimeLimitExceeded
+  conv "Wrong Answer" = WrongAnswer
   conv "Accepted" = Accepted
   conv "Memory Limit Exceeded" = Other
   conv "Compiling" = Compiling
@@ -187,7 +188,7 @@ printResult tests state
                            firstFailed <> " of " <> numTests
   where
   numTests = show $ length tests
-  firstFailed = show . fromMaybe 0 $ findIndex (/= TestPassed) tests
+  firstFailed = show . (+1) . fromMaybe 0 $ findIndex (/= TestPassed) tests
 
 submitSolution :: Submission -> AuthEnv IO SubmissionId
 submitSolution (problem, files) = do
@@ -210,7 +211,7 @@ submitSolution (problem, files) = do
                 <> [Option ["name=\"script\""] "true"]
                 <> map File files
 
-  conn <- lift . lift $ ask
+  conn <- lift . lift $ S.get
   tryIO $ sendRequest conn header (\o -> do
     mapM_ (\part -> do
         serialized <- buildChunk part

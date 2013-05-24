@@ -4,6 +4,7 @@
 module Utils where
 
 import Control.Applicative ((<$>))
+import Control.Concurrent (threadDelay) -- TODO: REMOVE !!!
 import Control.Error hiding (tryIO)
 import qualified Control.Exception as E
 import Control.Monad.Reader
@@ -18,7 +19,7 @@ import System.IO.Streams (readExactly)
 
 type ConfigEnvInternal m = S.StateT ConfigState m
 type ConfigEnv m = EitherT ErrorDesc (ConfigEnvInternal m)
-type ConnEnvInternal m = ReaderT Connection (ConfigEnvInternal m)
+type ConnEnvInternal m = S.StateT Connection (ConfigEnvInternal m)
 type ConnEnv m = EitherT ErrorDesc (ConnEnvInternal m)
 type AuthEnv m = EitherT ErrorDesc (ReaderT B.ByteString (ConnEnvInternal m))
 
@@ -101,6 +102,16 @@ defaultRequest = do
   setHeader "User-Agent" "Sofie"
   setHeader "Connection" "keep-alive"
 
+reestablishConnection :: ConnEnv IO ()
+reestablishConnection = do
+  conn <- lift S.get
+  tryIOMsg "Failed to close connection" $ closeConnection conn
+  host' <- B.unpack . host <$> lift (lift S.get)
+  tryIO $ threadDelay 100000
+  ctx <- tryIO $ baselineContextSSL
+  conn' <- tryIOMsg "Failed to reestablish connection" $ openConnectionSSL ctx host' 443
+  lift $ S.put conn'
+
 retrievePublicPage :: B.ByteString -> ConnEnv IO B.ByteString
 retrievePublicPage page = do
   header <- tryIO . buildRequest $ http GET page >> defaultRequest
@@ -108,16 +119,14 @@ retrievePublicPage page = do
 
 retrievePrivatePage :: B.ByteString -> AuthEnv IO B.ByteString
 retrievePrivatePage page = do
-  liftIO $ B.putStrLn $ "Requesting page: " <> page
   header <- makeSignedRequest $ do
     http GET page
     defaultRequest
-  liftIO $ B.putStrLn $ "header: " <> page
   unWrapTrans $ makeRequest header
 
 makeRequest :: Request -> ConnEnv IO B.ByteString
 makeRequest header = do
-  conn <- lift ask
+  conn <- lift S.get
   tryIO $ sendRequest conn header emptyBody
   tryIO $ receiveResponse conn concatHandler
 
@@ -132,7 +141,7 @@ authenticate = do
 
 
   let formData = [("token", apiKey conf), ("user", user conf), ("script", "true")] 
-  conn <- ask
+  conn <- S.get
   tryIO . sendRequest conn header $ encodedFormBody formData
 
   (headers, response) <- tryIO $ receiveResponse conn (\headers stream -> do

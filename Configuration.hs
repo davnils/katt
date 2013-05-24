@@ -56,7 +56,7 @@ loadGlobalConfig = runEitherT $ do
   return $ ConfigState
     (B.pack user')
     (B.pack apiKey')
-    (B.pack $ "https://" <> host')
+    (B.pack $ host')
     (B.pack $ U.url_path loginParsed)
     (B.pack $ U.url_path submitParsed)
     Nothing
@@ -82,7 +82,7 @@ loadProjectConfig = do
 -- | Save a project-specific configuration file.
 saveProjectConfig :: ConnEnv IO ()
 saveProjectConfig = do
-  project' <- lift (S.gets project)
+  project' <- lift . lift $ S.gets project
   state <- noteT "Tried to save an empty project configuration." . hoistMaybe $ project'
   problemName <- retrieveProblemName state
   serialized <- serialize problemName

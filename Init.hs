@@ -171,7 +171,7 @@ initializeProblem mkDir retrieveTests problem = do
     "Project configuration file already exists, please remove it in order to continue."
     (not fileExists)
 
-  lift . S.modify $ \s -> s { project = Just $ ProblemName problemName }
+  lift . lift . S.modify $ \s -> s { project = Just $ ProblemName problemName }
   C.saveProjectConfig
 
   when retrieveTests $ do

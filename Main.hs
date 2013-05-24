@@ -1,7 +1,6 @@
 {-# Language OverloadedStrings #-}
 
 import qualified Configuration as C
-import Control.Monad.Reader
 import Control.Monad.State
 import qualified Data.ByteString.Char8 as B
 import Data.Monoid ((<>))
@@ -48,10 +47,13 @@ printHelp = putStrLn $
 
 withConn :: ConfigState -> ConnEnv IO a -> IO a
 withConn conf action = do
-  conn <- liftIO $ establishConnection (host conf)
-  (res, _) <- runStateT (withConf conn) conf
-  liftIO $ closeConnection conn
+  B.putStrLn $ "Connecting to host: " <> host conf
+  ctx <- baselineContextSSL
+  conn <- openConnectionSSL ctx (B.unpack $ host conf) 443
+  -- conn <- establishConnection (host conf)
+  ((res, _), _) <- runStateT (withConf conn) conf
+  closeConnection conn
   return res
 
   where
-  withConf = runReaderT (terminateOnFailure "Failed to run command" action)
+  withConf = runStateT (terminateOnFailure "Failed to run command" action)
