@@ -108,9 +108,11 @@ retrievePublicPage page = do
 
 retrievePrivatePage :: B.ByteString -> AuthEnv IO B.ByteString
 retrievePrivatePage page = do
+  liftIO $ B.putStrLn $ "Requesting page: " <> page
   header <- makeSignedRequest $ do
     http GET page
     defaultRequest
+  liftIO $ B.putStrLn $ "header: " <> page
   unWrapTrans $ makeRequest header
 
 makeRequest :: Request -> ConnEnv IO B.ByteString

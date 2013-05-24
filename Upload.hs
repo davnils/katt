@@ -1,20 +1,23 @@
 {-# Language OverloadedStrings, ScopedTypeVariables #-}
 
-module Upload (makeSubmission) where
+module Upload (makeSubmission, parseSubmission, parseStatus, parseTestCases) where
 
 import Control.Applicative ((<$>))
 import Blaze.ByteString.Builder (fromByteString)
 import qualified Configuration as C
+import Control.Concurrent (threadDelay)
 import Control.Error hiding (tryIO)
 import Control.Monad.Reader
 import qualified Control.Monad.State as S
 import qualified Data.ByteString.Char8 as B
-import Data.List ((\\), union)
+import Data.List ((\\), union, findIndex)
 import Data.Maybe (fromJust)
 import Data.Monoid ((<>))
 import Network.Http.Client
 import SourceHandler
 import System.IO.Streams (write)
+import Text.Parsec hiding (token)
+import Text.Parsec.ByteString
 import Text.Regex.Posix
 import Utils
 
@@ -38,6 +41,30 @@ buildChunk (Option fields payload) = return $ B.intercalate crlf [headerLine, ""
     headerLine = B.intercalate "; " fieldList
     fieldList = "Content-Disposition: form-data" : fields
 
+submissionPage :: B.ByteString
+submissionPage = "submission"
+
+data SubmissionState
+  = Queued
+  | Compiling
+  | Running
+  | WrongAnswer
+  | TimeLimitExceeded
+  | Accepted
+  | CompileError
+  | Other
+  deriving (Eq, Show)
+
+data TestCase
+  = TestPassed
+  | TestFailed
+  | NotTested
+  deriving (Eq, Show)
+
+finalSubmissionState :: SubmissionState -> Bool
+finalSubmissionState s = elem s
+  [WrongAnswer, TimeLimitExceeded, CompileError, Accepted, Other]
+
 makeSubmission :: [String] -> ConnEnv IO ()
 makeSubmission filterArguments = do
   exists <- liftIO C.projectConfigExists
@@ -53,13 +80,114 @@ makeSubmission filterArguments = do
   liftIO $ mapM_ (putStrLn . ("Adding file: "++)) adjusted
 
   token <- authenticate 
-  submission <- EitherT $ runReaderT
-    (runEitherT $ submitSolution (problem, adjusted)) token
-  liftIO . putStrLn $ "Made submission: " <> show submission
+  EitherT $ runReaderT
+    (runEitherT $ do
+      submission <- submitSolution (problem, adjusted)
+      liftIO . putStrLn $ "Made submission: " <> show submission
+      checkSubmission submission
+    ) token
 
   where
   adjust Nothing files = files
   adjust (Just (add, sub)) files = union (files \\ sub) add
+
+-- | Poll kattis for updates on the specified submission.
+-- possible states:
+-- (1) queued
+-- (2) running
+-- (3) final: wrong answer, time limit exceeded, accepted, other
+--
+-- This function returns when the submission has reached one of the final states.
+-- TODO: Consider exponential back-off and timeout
+checkSubmission :: SubmissionId -> AuthEnv IO ()
+checkSubmission submission = do
+  liftIO $ threadDelay interval
+  page <- retrievePrivatePage $ "/" <> submissionPage <> "?id=" <> B.pack (show submission)
+  liftIO $ B.putStrLn $ "Retrieved the following page:\n" <> page
+  let (state, tests) = parseSubmission page
+
+  liftIO $ putStrLn $ "state: " <> show state
+  liftIO $ putStrLn $ "tests: " <> show tests
+
+  if finalSubmissionState state
+    then
+      liftIO $ printResult tests state
+    else do
+      liftIO $ putStrLn "Waiting for completion.." >> threadDelay interval
+      checkSubmission submission
+   
+   where
+   interval = 500000
+
+parseSubmission :: B.ByteString -> (SubmissionState, [TestCase])
+parseSubmission contents =
+  case res of
+    Left _ -> error "Internal parser error"
+    Right asd -> asd
+  where
+  res = parse parser "Submission parser" contents
+  parser = do
+    status <- parseStatus
+    tests <- parseTestCases
+    return (status, tests)
+
+parseStatus :: GenParser Char st SubmissionState
+parseStatus = skip >> status
+  where
+  beginStatus = string "<td class='status'><span class=\""
+  skip = manyTill anyChar (void (try beginStatus) <|> eof)
+  status = do
+    _ <- manyTill (letter) (char '\"')
+    _ <- char '>'
+    statusStr <- manyTill (letter <|> space) (char '<')
+    return $ conv statusStr
+
+  conv "Time Limit Exceeded" = TimeLimitExceeded
+  conv "Wrong Answer" = TimeLimitExceeded
+  conv "Accepted" = Accepted
+  conv "Memory Limit Exceeded" = Other
+  conv "Compiling" = Compiling
+  conv "Running" = Running
+  conv "Compile Error" = CompileError
+  conv _ = Other
+
+-- | Extract all span tags within the testcases div.
+-- for each span tag: check the corresponding class
+-- either 'rejected' or 'accepted'.
+parseTestCases :: GenParser Char st [TestCase] 
+parseTestCases = skip >> tests
+  where
+  beginTests = string "<div class='testcases'>"
+  endTests = string "</div>"
+  skip = manyTill anyChar (void (try beginTests) <|> eof)
+
+  tests = manyTill testCase (void (try endTests) <|> eof)
+  testCase = do
+    _ <- string "<span "
+    let classParser = try $ string "class="
+    skipMany (notFollowedBy classParser >> param (manyTill anyChar (char '=')))
+    (_, result) <- param classParser
+    _ <- manyTill anyChar (char '>' >> manyTill anyChar (string "</span>"))
+
+    mapResult result
+
+  mapResult "accepted" = return TestPassed
+  mapResult "rejected" = return TestFailed
+  mapResult _ = parserZero
+
+  param keyParser = do
+    tag <- keyParser
+    val <- char '\'' >> manyTill anyChar (char '\'')
+    return (tag, val)
+
+printResult :: [TestCase] -> SubmissionState -> IO ()
+printResult tests state
+  | state == Accepted = putStrLn $ "Accepted, " <> numTests <> " test(s) passed."
+  | otherwise = putStrLn $ "Result: " <> show state <> ", failed on test case " <>
+                           firstFailed <> " of " <> numTests
+  where
+  numTests = show $ length tests
+  firstFailed = show . fromMaybe 0 $ findIndex (/= TestPassed) tests
 
 submitSolution :: Submission -> AuthEnv IO SubmissionId
 submitSolution (problem, files) = do
