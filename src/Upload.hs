@@ -80,6 +80,8 @@ makeSubmission filterArguments = do
   liftIO $ mapM_ (putStrLn . ("Adding file: "++)) adjusted
 
   token <- authenticate 
+  liftIO $ B.putStrLn $ "token=" <> token
+{-
   submission <- EitherT $ runReaderT
     (runEitherT $ submitSolution (problem, adjusted)) token
 
@@ -90,6 +92,7 @@ makeSubmission filterArguments = do
   token' <- authenticate 
   EitherT $ runReaderT
     (runEitherT $ checkSubmission submission) token'
+-}
 
   where
   adjust Nothing files = files

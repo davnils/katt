@@ -26,7 +26,6 @@ main = do
 
 parseArgs :: ConfigState -> IO ()
 parseArgs conf = getArgs >>= parse
-
   where
   parse :: [String] -> IO ()
   parse ("init" : problem : []) = withConn conf . initializeProblem True True . ProblemName $ B.pack problem
@@ -49,7 +48,7 @@ withConn :: ConfigState -> ConnEnv IO a -> IO a
 withConn conf action = do
   B.putStrLn $ "Connecting to host: " <> host conf
   ctx <- baselineContextSSL
-  conn <- openConnectionSSL ctx (B.unpack $ host conf) 443
+  conn <- openConnectionSSL ctx (host conf) 443
   -- conn <- establishConnection (host conf)
   ((res, conn'), _) <- runStateT (withConf conn) conf
   closeConnection conn'

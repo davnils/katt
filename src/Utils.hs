@@ -106,7 +106,7 @@ reestablishConnection :: ConnEnv IO ()
 reestablishConnection = do
   conn <- lift S.get
   tryIOMsg "Failed to close connection" $ closeConnection conn
-  host' <- B.unpack . host <$> lift (lift S.get)
+  host' <- host <$> lift (lift S.get)
   tryIO $ threadDelay 100000
   ctx <- tryIO $ baselineContextSSL
   conn' <- tryIOMsg "Failed to reestablish connection" $ openConnectionSSL ctx host' 443
@@ -147,6 +147,9 @@ authenticate = do
   (headers, response) <- tryIO $ receiveResponse conn (\headers stream -> do
     response <- readExactly (B.length loginSuccess) stream
     return (headers, response))
+
+  let Just h = getHeader headers "Set-Cookie"
+  liftIO $ putStrLn $ show h
 
   tryAssert ("Login failure. Server returned: '" <> response <> "'")
     (response == loginSuccess)
