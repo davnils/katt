@@ -10,7 +10,6 @@ import qualified Control.Exception as E
 import Control.Monad.Reader
 import qualified Control.Monad.State as S
 import qualified Data.ByteString.Char8 as B
-import Data.List (find)
 import Data.Monoid ((<>))
 import Network.Http.Client
 import System.Exit (exitFailure)
@@ -130,6 +129,16 @@ makeRequest header = do
   tryIO $ sendRequest conn header emptyBody
   tryIO $ receiveResponse conn concatHandler
 
+extractSessionHeader :: B.ByteString -> Maybe B.ByteString
+extractSessionHeader headerStr 
+  | B.null match = Nothing
+  | otherwise =
+    case extractSessionHeader (B.tail match) of
+      Just match' -> Just match'
+      Nothing -> Just $ B.takeWhile (/= ';') match
+  where
+  (_, match) = B.breakSubstring "PHPSESSID" headerStr
+
 authenticate :: ConnEnv IO B.ByteString
 authenticate = do
   conf <- lift $ lift S.get
@@ -138,7 +147,6 @@ authenticate = do
     http POST ("/" <> loginPage conf)
     defaultRequest
     setContentType "application/x-www-form-urlencoded"
-
 
   let formData = [("token", apiKey conf), ("user", user conf), ("script", "true")] 
   conn <- S.get
@@ -154,9 +162,8 @@ authenticate = do
   tryAssert ("Login failure. Server returned: '" <> response <> "'")
     (response == loginSuccess)
     
-  noteT "Failed to parse login cookie" . hoistMaybe $ do
-    cookies <- B.words <$> getHeader headers "Set-Cookie"
-    B.takeWhile (/= ';') <$> find ("PHPSESSID" `B.isPrefixOf`) cookies
+  noteT "Failed to parse login cookie" . hoistMaybe $ 
+    getHeader headers "Set-Cookie" >>= extractSessionHeader
 
 retrieveProblemId :: KattisProblem -> ConnEnv IO Integer
 retrieveProblemId (ProblemId id') = return id'

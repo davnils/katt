@@ -1,6 +1,6 @@
 {-# Language OverloadedStrings, ScopedTypeVariables #-}
 
-module Upload (makeSubmission) where
+module Upload (makeSubmission, parseSubmission) where
 
 import Control.Applicative ((<$>))
 import Blaze.ByteString.Builder (fromByteString)
@@ -81,7 +81,7 @@ makeSubmission filterArguments = do
 
   token <- authenticate 
   liftIO $ B.putStrLn $ "token=" <> token
-{-
+
   submission <- EitherT $ runReaderT
     (runEitherT $ submitSolution (problem, adjusted)) token
 
@@ -92,7 +92,6 @@ makeSubmission filterArguments = do
   token' <- authenticate 
   EitherT $ runReaderT
     (runEitherT $ checkSubmission submission) token'
--}
 
   where
   adjust Nothing files = files
@@ -105,6 +104,7 @@ makeSubmission filterArguments = do
 checkSubmission :: SubmissionId -> AuthEnv IO ()
 checkSubmission submission = do
   page <- retrievePrivatePage $ "/" <> submissionPage <> "?id=" <> B.pack (show submission)
+  liftIO $ B.putStrLn page
   let (state, tests) = parseSubmission page
 
   if finalSubmissionState state
@@ -121,7 +121,7 @@ checkSubmission submission = do
 parseSubmission :: B.ByteString -> (SubmissionState, [TestCase])
 parseSubmission contents =
   case res of
-    Left _ -> error "Internal parser error"
+    Left err -> error $ "Internal parser error" <> show err
     Right res' -> res'
   where
   res = parse parser "Submission parser" contents
