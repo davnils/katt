@@ -97,13 +97,8 @@ makeSubmission filterArguments = do
   initialTimeout = 2000000
 
 -- | Poll kattis for updates on a submission.
--- possible states:
--- (1) queued
--- (2) running
--- (3) final: wrong answer, time limit exceeded, accepted, and others
---
--- This function returns when the submission has reached one of the final states.
--- TODO: Consider exponential back-off and timeout
+--  This function returns when the submission has reached one of the final states.
+--  TODO: Consider exponential back-off and timeout
 checkSubmission :: SubmissionId -> AuthEnv IO ()
 checkSubmission submission = do
   page <- retrievePrivatePage $ "/" <> submissionPage <> "?id=" <> B.pack (show submission)
@@ -117,8 +112,8 @@ checkSubmission submission = do
       checkSubmission submission
       unWrapTrans reestablishConnection
    
-   where
-   interval = 1000000
+  where
+  interval = 1000000
 
 parseSubmission :: B.ByteString -> (SubmissionState, [TestCase])
 parseSubmission contents =

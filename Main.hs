@@ -51,8 +51,8 @@ withConn conf action = do
   ctx <- baselineContextSSL
   conn <- openConnectionSSL ctx (B.unpack $ host conf) 443
   -- conn <- establishConnection (host conf)
-  ((res, _), _) <- runStateT (withConf conn) conf
-  closeConnection conn
+  ((res, conn'), _) <- runStateT (withConf conn) conf
+  closeConnection conn'
   return res
 
   where
