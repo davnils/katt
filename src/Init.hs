@@ -1,6 +1,20 @@
 {-# Language OverloadedStrings, ScopedTypeVariables,
     NoMonomorphismRestriction #-}
 
+--------------------------------------------------------------------
+-- |
+-- Module : Init
+--
+-- Init submodule providing initialization of problems
+-- and entire problem sessions.
+--
+-- Problems are initialized by creating a directory, configuration file,
+-- and optionally downloading all test files available.
+-- Both zip-based test data and embedded HTML tables are supported.
+--
+-- Problem sessions are initialized by parsing the list of problems and
+-- initializing each problem separately.
+
 module Init (initializeProblem, initializeSession) where
 
 import Control.Applicative ((<$>), (<*))
@@ -22,15 +36,21 @@ import Text.Parsec hiding (token)
 import Text.Parsec.ByteString
 import Utils
 
+-- | Parsed test cases associated with a problem.
 type TestContent = [(B.ByteString, B.ByteString)]
 
+-- | Possible test case scenarios.
 data TestParser
+  -- | No tests available.
   = NoTestsAvailable
+  -- | Test content available in zip file, given as URL.
   | TestAddress B.ByteString
+  -- | Embedded test content.
   | TestContents TestContent
   deriving Show
 
--- | Parse the three different test file cases.
+-- | Parse the possible different test file cases, given the problem page.
+--   Any zip download links are preferred over embedded test data.
 parseProblemPage :: B.ByteString -> TestParser
 parseProblemPage contents = 
   case res of
@@ -38,8 +58,7 @@ parseProblemPage contents =
     Right test -> test
   where res = parse (try parseAddress <|> parseEmbedded) "Test parser" contents
 
--- | Try to parse a download URL from the supplied data.
--- | format: "<a href='download/sampledata?id=problem'>Download</a>"
+-- | Try to parse a download URL from the supplied page data.
 parseAddress :: GenParser Char st TestParser
 parseAddress = do
   void $ manyTill anyChar (try $ startLink >> lookAhead endParser)
@@ -51,7 +70,7 @@ parseAddress = do
   endParser = manyTill anyChar (char '\'') <* endLink "Download"
 
 -- | Try to parse test cases embedded into HTML data.
--- | Currently only table-style test cases are supported (e.g. problem 'friends').
+--   Currently only table-style test cases are supported (e.g. problem 'friends').
 parseEmbedded :: GenParser Char st TestParser
 parseEmbedded = TestContents <$> tests 
   where
@@ -88,8 +107,8 @@ parseEmbedded = TestContents <$> tests
   testData = liftM fold $ td innerTestData <* sp
   testCase = liftM2 (,) testData testData
 
--- | Retrieve the zip archive located at the specified URL
--- | and unzip the contents.
+-- | Retrieve the zip archive located at the specified URL and unzip the contents.
+--   Matches input and output file pairs, producing a list of tuples.
 downloadTestArchive :: B.ByteString -> ConnEnv IO TestContent
 downloadTestArchive url = do
   zipFile <- BL.fromChunks . return <$> retrievePublicPage url
@@ -110,19 +129,12 @@ downloadTestArchive url = do
   convertEntry = getData *** getData
   getData = fold . BL.toChunks . fromEntry
 
-  -- should Partition files into in and ans files, then match them
-  -- check that there are an equivalent amount of each
-
--- | Retrieve test files, which fall into one or several of the following categories:
--- | (1) nonexistent
--- | (2) embedded on problem page
--- | (3) zip file linked from problem page
+-- | Retrieve test cases, which fall into either one of the three categories.
 retrieveTestFiles :: KattisProblem -> ConnEnv IO TestContent
 retrieveTestFiles problem = do
   problemName <- retrieveProblemName problem
   problemPage <- retrievePublicPage $ problemAddress <> problemName
 
-  -- determine which of the three cases apply to this problem
   case parseProblemPage problemPage of
     NoTestsAvailable -> do
       tryIO $ B.hPutStrLn stderr "No tests available"
@@ -130,9 +142,11 @@ retrieveTestFiles problem = do
     TestAddress addr -> downloadTestArchive addr
     TestContents list -> return list
 
+-- | Page listing all problems associated with a problem session, relative 'Utils.host'.
 sessionPage :: B.ByteString
 sessionPage = "/standings/?sid="
 
+-- | Parse a problem session page, locating all the associated problem names.
 parseProblemList :: GenParser Char st [KattisProblem]
 parseProblemList = skip >> endBy1 tag skip
   where
@@ -142,8 +156,7 @@ parseProblemList = skip >> endBy1 tag skip
     problem <- manyTill (letter <|> digit) (char '\'')
     return . ProblemName $ B.pack problem
 
--- Given a problem session id, call initializeProblem
--- for each of the problems available, or return with none available.
+-- | Given a problem session id, initialize all the corresponding problems.
 initializeSession :: Bool -> ProblemSession -> ConnEnv IO ()
 initializeSession retrieveTests session = do
   contents <- retrievePublicPage $ sessionPage <> (B.pack $ show session)
@@ -154,8 +167,8 @@ initializeSession retrieveTests session = do
   restoreDir = liftIO $ setCurrentDirectory ".."
   -- TODO: restore to previously used directory
 
--- Given a problem identifier, setup directory structures and
--- optionally download test cases.
+-- | Given a problem identifier, setup directory structures and
+--   optionally download test cases.
 initializeProblem :: Bool -> Bool -> KattisProblem -> ConnEnv IO ()
 initializeProblem mkDir retrieveTests problem = do
   liftIO . putStrLn $ "Initializing problem: " <> show problem

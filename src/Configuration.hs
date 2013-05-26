@@ -1,5 +1,20 @@
 {-# Language OverloadedStrings, NoMonomorphismRestriction #-}
 
+--------------------------------------------------------------------
+-- |
+-- Module : Configuration
+--
+-- Implements loading and saving of global and local configurations.
+-- All configurations are stored in the 'ConfigFile' format, which is
+-- fully compatible with the official Kattis configuration file.
+--
+-- The global configuration file corresponds to /kattisrc/, which holds
+-- information regarding authentication and hosts.
+--
+-- The local configuration holds project-specific information and
+-- is created by the 'Init' submodule.
+-- Currently only the problem name is stored.
+
 module Configuration (loadGlobalConfig, projectConfigExists, loadProjectConfig, saveProjectConfig) where
 
 import Control.Error hiding (tryIO)
@@ -19,18 +34,23 @@ import Utils
 globalConfigFile :: FilePath
 globalConfigFile  = ".kattisrc"
 
+-- | Path to project-specific (local) configuration file.
 projectConfigFile :: FilePath
 projectConfigFile = B.unpack $ configDir <> "/" <> "config"
 
+-- | Serialize error description into bytestring.
 convertErrorDesc :: (Show a) => (a, String) -> B.ByteString
 convertErrorDesc (errorData, str) = B.pack (show errorData) <> B.pack str
 
+-- | Retrieve a field from the configuration state using a key and section,
+--   possibly failing.
 get' :: (Monad m, Get_C r) => ConfigParser -> SectionSpec -> String -> EitherT B.ByteString m r
 get' conf section key = fmapLT
   (const . B.pack $ "Failed to parse " <> key <> " field")
   (get conf section key)
 
 -- | Load global configuration file and parse the configuration state.
+--   Ensures that all fields are present and validates the URLs.
 loadGlobalConfig :: IO (Either ErrorDesc ConfigState)
 loadGlobalConfig = runEitherT $ do
   home <- tryIO getHomeDirectory
@@ -66,20 +86,20 @@ loadGlobalConfig = runEitherT $ do
   parseHost (U.URL (U.Absolute host') _ _) = return $ U.host host'
   parseHost _ = left "Invalid URL format"
 
--- | Check if a project-specific configuration exists.
+-- | Check if a project-specific configuration file exists and can be read.
 projectConfigExists :: IO Bool
 projectConfigExists = catchIOError open . const $ return False
   where
   open = withFile projectConfigFile ReadMode . const $ return True
 
--- | Load a project-specific configuration file based on the current directory.
+-- | Load a project-specific configuration based on the current directory.
 loadProjectConfig :: ConfigEnv IO ()
 loadProjectConfig = do
   conf <- fmapLT convertErrorDesc $ join . liftIO $ readfile emptyCP projectConfigFile
   problem <- get' conf "problem" "problemname"
   lift . S.modify $ \s -> s { project = Just . ProblemName $ B.pack problem}
 
--- | Save a project-specific configuration file.
+-- | Save a project-specific configuration file to disk.
 saveProjectConfig :: ConnEnv IO ()
 saveProjectConfig = do
   project' <- lift . lift $ S.gets project

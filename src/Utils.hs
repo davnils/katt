@@ -1,6 +1,13 @@
 {-# Language OverloadedStrings, ScopedTypeVariables,
     NoMonomorphismRestriction #-}
 
+--------------------------------------------------------------------
+-- |
+-- Module : Utils
+--
+-- Contains shared type declarations and various utility functions.
+--
+
 module Utils where
 
 import Control.Applicative ((<$>))
@@ -16,72 +23,114 @@ import System.Exit (exitFailure)
 import System.IO (stderr)
 import System.IO.Streams (readExactly)
 
+-- | Configuration layer consisting of configuration state.
 type ConfigEnvInternal m = S.StateT ConfigState m
+-- | Configuration layer wrapped with error handling.
 type ConfigEnv m = EitherT ErrorDesc (ConfigEnvInternal m)
+
+-- | Connection layer with connection state layered on the configuration layer.
 type ConnEnvInternal m = S.StateT Connection (ConfigEnvInternal m)
+-- | Connection layer wrapped with error handling.
 type ConnEnv m = EitherT ErrorDesc (ConnEnvInternal m)
+
+-- | Authentication layer with token state and error handling,
+--   wrapping the connection layer.
 type AuthEnv m = EitherT ErrorDesc (ReaderT B.ByteString (ConnEnvInternal m))
 
+-- | Submissions consist of a problem identifier and a set of file paths.
 type Submission = (KattisProblem, [FilePath])
+
+-- | Error description alias.
 type ErrorDesc = B.ByteString
+
+-- | Submissions are identified with an integer id.
 type SubmissionId = Integer
+--
+-- | Problem sessions are identified with an integer id.
 type ProblemSession = Integer
+
+-- | Project-specific state consists of the problem name.
 type ProjectState = (KattisProblem)
 
+-- | Global configuration, initialized from the /.kattisrc/ file.
 data ConfigState =
   ConfigState {
+    -- | Username.
     user :: B.ByteString,
+    -- | API token (hash).
     apiKey :: B.ByteString,
+    -- | Host to be considered as service.
     host :: B.ByteString,
+    -- | URL to login page, relative 'host'.
     loginPage :: B.ByteString,
+    -- | URL to submit page, relative 'host'.
     submitPage :: B.ByteString,
+    -- | Project-specific state, optionally loaded.
     project :: Maybe ProjectState
   }
   deriving Show
 
+-- | A Kattis problem.
 data KattisProblem
+  -- | Problem ID, unique.
   = ProblemId Integer
+  -- | Associated name of the problem.
   | ProblemName B.ByteString
   deriving (Eq, Show)
 
+-- | Language used in submission.
 data KattisLanguage
+  -- | C++.
   = LangCplusplus
+  -- | Java.
   | LangJava
+  -- | C.
   | LangC
   deriving (Eq, Show)
 
+-- | Server response indicating successful login.
 loginSuccess :: B.ByteString
 loginSuccess = "Login successful"
 
+-- | Extension of input test files.
 inputTestExtension :: FilePath
 inputTestExtension = ".in"
 
+-- | Extension of reference ouput test files.
 outputTestExtension :: FilePath
 outputTestExtension = ".ans"
 
+-- | Name of this program.
 programName :: B.ByteString
 programName = "sofie"
 
+-- | Relative path to project-specific configuration directory.
 configDir :: B.ByteString
 configDir = "." <> programName
 
+-- | Relative path to folder containing tests.
 testFolder :: FilePath
 testFolder = "tests"
 
+-- | URL to page with problem information, relative to 'host'.
 problemAddress :: B.ByteString
 problemAddress = "/problems/"
 
+-- | Lift some error monad one layer.
 unWrapTrans :: (Monad m, MonadTrans t) => EitherT e m a -> EitherT e (t m) a
 unWrapTrans = EitherT . lift . runEitherT
 
+-- | Execute an IO action and catch any exceptions.
 tryIO :: MonadIO m => IO a -> EitherT ErrorDesc m a
 tryIO = EitherT . liftIO . liftM (fmapL (B.pack . show)) . 
   (E.try :: (IO a -> IO (Either E.SomeException a)))
 
+-- | Execute an IO action and catch any exceptions, tagged with description.
 tryIOMsg :: MonadIO m => B.ByteString -> IO a -> EitherT ErrorDesc m a
 tryIOMsg msg = EitherT . liftIO . liftM (fmapL $ const msg) . 
   (E.try :: (IO a -> IO (Either E.SomeException a)))
 
+-- | Evaluate an error action and terminate process upon failure.
 terminateOnFailure :: MonadIO m => ErrorDesc -> EitherT ErrorDesc m a -> m a
 terminateOnFailure msg state = do
   res <- runEitherT state
@@ -91,31 +140,37 @@ terminateOnFailure msg state = do
       exitFailure
     Right success -> return success
 
+-- | Sign an existing HTTP request with a temporary token.
 makeSignedRequest :: RequestBuilder () -> AuthEnv IO Request
 makeSignedRequest req = do
   key <- lift $ liftM (setHeader "Cookie") ask
   liftIO . buildRequest $ req >> key
 
+-- | Default HTTP request.
 defaultRequest :: RequestBuilder ()
 defaultRequest = do
-  setHeader "User-Agent" "Sofie"
+  setHeader "User-Agent" "Sofie" -- TODO: Use programName alias
   setHeader "Connection" "keep-alive"
 
+-- | Reestablish an existing connection.
+--   Useful in order to avoid timeouts related to keep-alive.
 reestablishConnection :: ConnEnv IO ()
 reestablishConnection = do
   conn <- lift S.get
   tryIOMsg "Failed to close connection" $ closeConnection conn
   host' <- host <$> lift (lift S.get)
-  tryIO $ threadDelay 100000
+  tryIO $ threadDelay 100000 -- TODO: REMOVE
   ctx <- tryIO $ baselineContextSSL
   conn' <- tryIOMsg "Failed to reestablish connection" $ openConnectionSSL ctx host' 443
   lift $ S.put conn'
 
+-- | Retrieve a publically available page, using HTTP GET.
 retrievePublicPage :: B.ByteString -> ConnEnv IO B.ByteString
 retrievePublicPage page = do
   header <- tryIO . buildRequest $ http GET page >> defaultRequest
   makeRequest header
 
+-- | Retrieve a page requiring authentication, using HTTP GET.
 retrievePrivatePage :: B.ByteString -> AuthEnv IO B.ByteString
 retrievePrivatePage page = do
   header <- makeSignedRequest $ do
@@ -123,12 +178,14 @@ retrievePrivatePage page = do
     defaultRequest
   unWrapTrans $ makeRequest header
 
+-- | Make a HTTP request and retrieve the server response body.
 makeRequest :: Request -> ConnEnv IO B.ByteString
 makeRequest header = do
   conn <- lift S.get
   tryIO $ sendRequest conn header emptyBody
   tryIO $ receiveResponse conn concatHandler
 
+-- | Extract correct temporary token from cookie header string.
 extractSessionHeader :: B.ByteString -> Maybe B.ByteString
 extractSessionHeader headerStr 
   | B.null match = Nothing
@@ -139,6 +196,8 @@ extractSessionHeader headerStr
   where
   (_, match) = B.breakSubstring "PHPSESSID" headerStr
 
+-- | Authenticate an existing connection, returns a temporary token.
+--   Basically the API token is used to acquire a session-specific token.
 authenticate :: ConnEnv IO B.ByteString
 authenticate = do
   conf <- lift $ lift S.get
@@ -162,10 +221,12 @@ authenticate = do
   noteT "Failed to parse login cookie" . hoistMaybe $ 
     getHeader headers "Set-Cookie" >>= extractSessionHeader
 
+-- | Retrieve problem ID of a Kattis problem.
 retrieveProblemId :: KattisProblem -> ConnEnv IO Integer
 retrieveProblemId (ProblemId id') = return id'
 retrieveProblemId (ProblemName _) = undefined
 
+-- | Retrieve problem name of a Kattis problem.
 retrieveProblemName :: KattisProblem -> ConnEnv IO B.ByteString
 retrieveProblemName (ProblemId _) = undefined
 retrieveProblemName (ProblemName name) = return name

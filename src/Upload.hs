@@ -1,5 +1,19 @@
 {-# Language OverloadedStrings, ScopedTypeVariables #-}
 
+--------------------------------------------------------------------
+-- |
+-- Module : Upload
+--
+-- Upload submodule providing submissions of solutions and parsing of results.
+--
+-- A submission is done by including all recursively found files and filtering
+-- using a file filter given as an argument.
+-- This is followed by polling for a submission result until some final
+-- submission state has been reached (e.g. accepted).
+--
+-- Currently multipart data upload is implemented since https-streams
+-- (the HTTP client being used) does not support it (yet?).
+
 module Upload (makeSubmission) where
 
 import Control.Applicative ((<$>))
@@ -21,13 +35,18 @@ import Text.Parsec.ByteString
 import Text.Regex.Posix
 import Utils
 
+-- | Line separator used in HTTP headers. 
 crlf :: B.ByteString
 crlf = "\r\n"
 
+-- | Multipart field consisting of an option or file.
 data MultiPartField
+  -- | Option built using a list of assignments and a payload.
   = Option [B.ByteString] B.ByteString
+  -- | File to submitted, path given.
   | File FilePath
 
+-- | Serialize a chunk based on a file to be submitted.
 buildChunk :: MultiPartField -> IO B.ByteString
 buildChunk (File path) = do
   file <- B.readFile path
@@ -36,50 +55,79 @@ buildChunk (File path) = do
     headerLine = B.intercalate "; " ["Content-Disposition: form-data", "name=\"sub_file[]\"",
                                      B.concat ["filename=\"", B.pack path, "\""]]
 
+-- | Serialize a chunk based on an option.
 buildChunk (Option fields payload) = return $ B.intercalate crlf [headerLine, "", payload, ""]
   where
     headerLine = B.intercalate "; " fieldList
     fieldList = "Content-Disposition: form-data" : fields
 
+-- | Submission page URL, relative 'Utils.host', from which specific submission can be requested.
 submissionPage :: B.ByteString
 submissionPage = "submission"
 
+-- | Possible states of a submission, with unknowns being grouped into 'Other'.
 data SubmissionState
+  -- | Submission is queued.
   = Queued
+  -- | Submission is compiling.
   | Compiling
+  -- | Submission is running.
   | Running
+  -- | Wrong answer.
   | WrongAnswer
+  -- | Time limit exceeded.
   | TimeLimitExceeded
+  -- | Submission was accepted (only success state).
   | Accepted
+  -- | Compile error.
   | CompileError
+  -- | Run time error.
   | RunTimeError
+  -- | Some other, unmatched error code. Only used when parsing fails.
   | Other
   deriving (Eq, Show)
 
+-- | Possible states of a single test case, i.e. an (input, output) data pair.
 data TestCase
+  -- | Test case passed.
   = TestPassed
+  -- | Test case failed (state /= Accepted)
   | TestFailed
+  -- | Test case has not been executed.
   | NotTested
   deriving (Eq, Show)
 
+-- | Check if a given state is final, i.e. won't transition into some other.
+--   Note that 'Other' is listed as final.
 finalSubmissionState :: SubmissionState -> Bool
 finalSubmissionState s = elem s
   [WrongAnswer, TimeLimitExceeded, CompileError, Accepted, Other]
 
+-- | Make a submission of the project in the working directory.
+--   Accepts a list of filters on the form /+file1 -file2 ../, which are
+--   taken into account when locating all the source files.
+--   /+file/ implies adding the specified file.
+--   /-file/ implies removing the specified file.
+--
+--   In addition to the filters, all recursively found source code files
+--   will be included in the submission.
 makeSubmission :: [String] -> ConnEnv IO ()
 makeSubmission filterArguments = do
   exists <- liftIO C.projectConfigExists
   tryAssert "No project configuration could be found."
     exists
 
+  --TODO: fromJust?
   unWrapTrans C.loadProjectConfig
   problem <- lift . lift $ (fromJust <$> S.gets project)
 
+  -- Locate all source files, filter based on filter list.
   files <- tryIOMsg "Failed to locate source files" findFiles
   let adjusted = adjust (parseFilter filterArguments) files
 
   liftIO $ mapM_ (putStrLn . ("Adding file: "++)) adjusted
 
+  -- Authenticate, submit files, and retrieve submission id.
   token <- authenticate 
 
   submission <- EitherT $ runReaderT
@@ -89,6 +137,7 @@ makeSubmission filterArguments = do
   tryIO $ threadDelay initialTimeout
   reestablishConnection
 
+  -- Poll submission page until completion.
   token' <- authenticate 
   EitherT $ runReaderT
     (runEitherT $ checkSubmission submission) token'
@@ -96,6 +145,8 @@ makeSubmission filterArguments = do
   where
   adjust Nothing files = files
   adjust (Just (add, sub)) files = union (files \\ sub) add
+
+  -- Initial timeout before requesting updates is 2 s.
   initialTimeout = 2000000
 
 -- | Poll kattis for updates on a submission.
@@ -116,8 +167,12 @@ checkSubmission submission = do
       checkSubmission submission
    
   where
+  -- Default poll interval is 1 s.
   interval = 1000000
 
+-- | Parse the supplied submission page into:
+--   (1) Current submission state
+--   (2) Status of all test cases
 parseSubmission :: B.ByteString -> (SubmissionState, [TestCase])
 parseSubmission contents =
   case res of
@@ -127,12 +182,15 @@ parseSubmission contents =
   res = parse parser "Submission parser" contents
   parser = liftM2 (,) parseStatus parseTestCases
 
+-- | String separator parser.
 strSep :: GenParser Char st ()
 strSep = void (char '\'' <|> char '"')
 
+-- | End-of-tag parser, ignores everything up to the end of the current tag.
 endTag :: GenParser Char st ()
 endTag = void $ manyTill anyChar (char '>')
 
+-- | Parse the submission status field, beginning from any offset in the page data.
 parseStatus :: GenParser Char st SubmissionState
 parseStatus = skip >> status
   where
@@ -141,7 +199,11 @@ parseStatus = skip >> status
     strSep >> string "status" >> strSep >> endTag
     void $ string "<span class=" >> strSep
 
+  -- Skip to the appropiate <td> tag.
   skip = manyTill anyChar (void (try beginStatus) <|> eof)
+
+  -- Parse contents in <td>...</td>.
+  -- TODO: check if manyTill can be rewritten to the endTag pattern
   status = do
     void $ manyTill anyChar strSep
     endTag
@@ -158,9 +220,7 @@ parseStatus = skip >> status
   conv "Run Time Error" = RunTimeError
   conv _ = Other
 
--- | Extract all span tags within the testcases div.
---   for each span tag: check the corresponding class
---   either 'rejected', 'accepted', or not tested.
+-- | Parse the status of all test cases, beginning from any offset in the page data.
 parseTestCases :: GenParser Char st [TestCase] 
 parseTestCases = skip >> tests
   where
@@ -169,9 +229,14 @@ parseTestCases = skip >> tests
     strSep >> string "testcases" >> strSep
     endTag
 
+  -- Locate surrounding div tag.
   skip = manyTill anyChar (void (try beginTests) <|> eof)
 
+  -- Parse all test cases.
   tests = many1 testCase
+
+  -- Each test case is basically <span [class="status"]>...</span> 
+  -- where a missing class attribute implies that it hasn't been executed.
   testCase = do
     void . try $ string "<span "
     classResult <- optionMaybe $ do
@@ -185,6 +250,7 @@ parseTestCases = skip >> tests
   mapResult "rejected" = return TestFailed
   mapResult _ = parserZero
 
+-- | Print the result of a submission.
 printResult :: [TestCase] -> SubmissionState -> IO ()
 printResult tests state
   | state == Accepted = putStrLn $ "Accepted, " <> numTests <> " test(s) passed."
@@ -194,6 +260,7 @@ printResult tests state
   numTests = show $ length tests
   firstFailed = show . (+1) . fromMaybe 0 $ findIndex (/= TestPassed) tests
 
+-- | Submit a solution, given problem name and source code files.
 submitSolution :: Submission -> AuthEnv IO SubmissionId
 submitSolution (problem, files) = do
   let multiPartSeparator = "separator"

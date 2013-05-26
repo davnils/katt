@@ -1,5 +1,17 @@
 {-# Language OverloadedStrings #-}
 
+--------------------------------------------------------------------
+-- |
+-- Module : SourceHandler
+--
+-- Provides searching of source code files and language identification.
+--
+-- Language identification is required in order to detect any
+-- inconsistencies (e.g. combining Java and C), and to tag submissions.
+--
+-- Java also requires identifying which file contains the Main class.
+--
+
 module SourceHandler (parseFilter, findFiles, determineLanguage, findMainClass) where
 
 import Control.Applicative
