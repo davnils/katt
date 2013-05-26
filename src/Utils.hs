@@ -156,9 +156,6 @@ authenticate = do
     response <- readExactly (B.length loginSuccess) stream
     return (headers, response))
 
-  let Just h = getHeader headers "Set-Cookie"
-  liftIO $ putStrLn $ show h
-
   tryAssert ("Login failure. Server returned: '" <> response <> "'")
     (response == loginSuccess)
     

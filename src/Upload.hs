@@ -1,6 +1,6 @@
 {-# Language OverloadedStrings, ScopedTypeVariables #-}
 
-module Upload (makeSubmission, parseSubmission) where
+module Upload (makeSubmission) where
 
 import Control.Applicative ((<$>))
 import Blaze.ByteString.Builder (fromByteString)
@@ -52,6 +52,7 @@ data SubmissionState
   | TimeLimitExceeded
   | Accepted
   | CompileError
+  | RunTimeError
   | Other
   deriving (Eq, Show)
 
@@ -80,7 +81,6 @@ makeSubmission filterArguments = do
   liftIO $ mapM_ (putStrLn . ("Adding file: "++)) adjusted
 
   token <- authenticate 
-  liftIO $ B.putStrLn $ "token=" <> token
 
   submission <- EitherT $ runReaderT
     (runEitherT $ submitSolution (problem, adjusted)) token
@@ -103,17 +103,17 @@ makeSubmission filterArguments = do
 --  TODO: Consider exponential back-off and timeout
 checkSubmission :: SubmissionId -> AuthEnv IO ()
 checkSubmission submission = do
-  page <- retrievePrivatePage $ "/" <> submissionPage <> "?id=" <> B.pack (show submission)
-  liftIO $ B.putStrLn page
+  page <- retrievePrivatePage $
+    "/" <> submissionPage <> "?id=" <> B.pack (show submission)
   let (state, tests) = parseSubmission page
 
   if finalSubmissionState state
     then
-      liftIO $ printResult tests state
+      tryIO $ printResult tests state
     else do
       tryIO $ putStrLn "Waiting for completion.." >> threadDelay interval
-      checkSubmission submission
       unWrapTrans reestablishConnection
+      checkSubmission submission
    
   where
   interval = 1000000
@@ -121,23 +121,30 @@ checkSubmission submission = do
 parseSubmission :: B.ByteString -> (SubmissionState, [TestCase])
 parseSubmission contents =
   case res of
-    Left err -> error $ "Internal parser error" <> show err
+    Left err' -> error $ "Internal parser error" <> show err'
     Right res' -> res'
   where
   res = parse parser "Submission parser" contents
-  parser = do
-    status <- parseStatus
-    tests <- parseTestCases
-    return (status, tests)
+  parser = liftM2 (,) parseStatus parseTestCases
+
+strSep :: GenParser Char st ()
+strSep = void (char '\'' <|> char '"')
+
+endTag :: GenParser Char st ()
+endTag = void $ manyTill anyChar (char '>')
 
 parseStatus :: GenParser Char st SubmissionState
 parseStatus = skip >> status
   where
-  beginStatus = string "<td class='status'><span class=\""
+  beginStatus = do
+    void $ string "<td class="
+    strSep >> string "status" >> strSep >> endTag
+    void $ string "<span class=" >> strSep
+
   skip = manyTill anyChar (void (try beginStatus) <|> eof)
   status = do
-    _ <- manyTill (letter) (char '\"')
-    _ <- char '>'
+    void $ manyTill anyChar strSep
+    endTag
     statusStr <- manyTill (letter <|> space) (char '<')
     return $ conv statusStr
 
@@ -148,36 +155,35 @@ parseStatus = skip >> status
   conv "Compiling" = Compiling
   conv "Running" = Running
   conv "Compile Error" = CompileError
+  conv "Run Time Error" = RunTimeError
   conv _ = Other
 
 -- | Extract all span tags within the testcases div.
--- for each span tag: check the corresponding class
--- either 'rejected' or 'accepted'.
+--   for each span tag: check the corresponding class
+--   either 'rejected', 'accepted', or not tested.
 parseTestCases :: GenParser Char st [TestCase] 
 parseTestCases = skip >> tests
   where
-  beginTests = string "<div class='testcases'>"
-  endTests = string "</div>"
+  beginTests = do
+    void $ string "<div class="
+    strSep >> string "testcases" >> strSep
+    endTag
+
   skip = manyTill anyChar (void (try beginTests) <|> eof)
 
-  tests = manyTill testCase (void (try endTests) <|> eof)
+  tests = many1 testCase
   testCase = do
-    _ <- string "<span "
-    let classParser = try $ string "class="
-    skipMany (notFollowedBy classParser >> param (manyTill anyChar (char '=')))
-    (_, result) <- param classParser
-    _ <- manyTill anyChar (char '>' >> manyTill anyChar (string "</span>"))
+    void . try $ string "<span "
+    classResult <- optionMaybe $ do
+      string "class=" >> strSep
+      manyTill anyChar strSep
 
-    mapResult result
+    void . manyTill anyChar $ string "</span>"
+    fromMaybe (return NotTested) (mapResult <$> classResult)
 
   mapResult "accepted" = return TestPassed
   mapResult "rejected" = return TestFailed
   mapResult _ = parserZero
-
-  param keyParser = do
-    tag <- keyParser
-    val <- char '\'' >> manyTill anyChar (char '\'')
-    return (tag, val)
 
 printResult :: [TestCase] -> SubmissionState -> IO ()
 printResult tests state
