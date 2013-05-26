@@ -18,7 +18,7 @@ import qualified Data.ByteString.Char8 as B
 import Data.Monoid ((<>))
 import Init
 import Network.Http.Client
-import OpenSSL
+import OpenSSL (withOpenSSL)
 import System.Environment
 import System.Exit (exitFailure)
 import Upload
@@ -68,9 +68,7 @@ printHelp = putStrLn $
 withConn :: ConfigState -> ConnEnv IO a -> IO a
 withConn conf action = do
   B.putStrLn $ "Connecting to host: " <> host conf
-  ctx <- baselineContextSSL
-  conn <- openConnectionSSL ctx (host conf) 443
-  -- conn <- establishConnection (host conf)
+  conn <- establishConnection (host conf)
   ((res, conn'), _) <- runStateT (withConf conn) conf
   closeConnection conn'
   return res

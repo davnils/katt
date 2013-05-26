@@ -11,7 +11,6 @@
 module Utils where
 
 import Control.Applicative ((<$>))
-import Control.Concurrent (threadDelay) -- TODO: REMOVE !!!
 import Control.Error hiding (tryIO)
 import qualified Control.Exception as E
 import Control.Monad.Reader
@@ -149,7 +148,7 @@ makeSignedRequest req = do
 -- | Default HTTP request.
 defaultRequest :: RequestBuilder ()
 defaultRequest = do
-  setHeader "User-Agent" "Sofie" -- TODO: Use programName alias
+  setHeader "User-Agent" programName
   setHeader "Connection" "keep-alive"
 
 -- | Reestablish an existing connection.
@@ -159,9 +158,7 @@ reestablishConnection = do
   conn <- lift S.get
   tryIOMsg "Failed to close connection" $ closeConnection conn
   host' <- host <$> lift (lift S.get)
-  tryIO $ threadDelay 100000 -- TODO: REMOVE
-  ctx <- tryIO $ baselineContextSSL
-  conn' <- tryIOMsg "Failed to reestablish connection" $ openConnectionSSL ctx host' 443
+  conn' <- tryIOMsg "Failed to reestablish connection" $ establishConnection host'
   lift $ S.put conn'
 
 -- | Retrieve a publically available page, using HTTP GET.

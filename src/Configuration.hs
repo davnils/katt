@@ -76,7 +76,7 @@ loadGlobalConfig = runEitherT $ do
   return $ ConfigState
     (B.pack user')
     (B.pack apiKey')
-    (B.pack $ host')
+    (B.pack $ "https://" <> host')
     (B.pack $ U.url_path loginParsed)
     (B.pack $ U.url_path submitParsed)
     Nothing

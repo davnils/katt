@@ -117,7 +117,6 @@ makeSubmission filterArguments = do
   tryAssert "No project configuration could be found."
     exists
 
-  --TODO: fromJust?
   unWrapTrans C.loadProjectConfig
   problem <- lift . lift $ (fromJust <$> S.gets project)
 
