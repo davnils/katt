@@ -1,22 +1,24 @@
-name:                sofie
+name:                katt
 version:             0.1.0.0
 stability:           experimental
 
 synopsis:            Client for the Kattis judge system.
-description:         Unofficial CLI client for the Kattis online judge system.
+description:         Unofficial CLI client for the Kattis online judge system (currently in BETA).
                      .
                      Written in a git-like fashion, it supports automatic
                      downloading of test cases, easy submissions, and more.
                      .
                      Basically a problem is initialized as follows
-                     (downloads any available test cases):
+                     (creates a directory and downloads any available test cases):
                      .
-                     > > sofie init hello
+                     > > katt init hello
+                     > > cd hello
                      .
                      Source files, problem names, and language identification is handled 
                      automatically when submitting solutions:
                      .
-                     > > sofie submit
+                     > > vim hello.java
+                     > > katt submit
                      > Made submission 4712
                      > Accepted: 1 of 1 test(s) passed
                      .
@@ -25,10 +27,16 @@ description:         Unofficial CLI client for the Kattis online judge system.
                      .
                      Get started by downloading a /.kattisrc/ config from
                      the official site, make sure you have the haskell platform
-                     installed, then run /cabal install sofie/.
+                     installed, then run /cabal install katt/.
+                     .
+                     Feel free to post an issue or pull request if there is something
+                     buggy (very likely in beta) or some improvement.
+                     .
+                     Please note that the beta release is limited to C, C++ and Java.
+                     It also only supports running on unix.
 
-homepage:            https://github.com/davnils/sofie
-bug-reports:         https://github.com/davnils/sofie/issues
+homepage:            https://github.com/davnils/katt
+bug-reports:         https://github.com/davnils/katt/issues
 
 license:             BSD3
 license-file:        LICENSE
@@ -42,7 +50,7 @@ build-type:          Simple
 cabal-version:       >=1.8
 
 
-executable sofie
+executable katt
   hs-source-dirs:    src
   main-is:           Main.hs
   other-modules:     Init, Upload, Configuration, Utils, SourceHandler

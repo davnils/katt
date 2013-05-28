@@ -101,7 +101,7 @@ outputTestExtension = ".ans"
 
 -- | Name of this program.
 programName :: B.ByteString
-programName = "sofie"
+programName = "katt"
 
 -- | Relative path to project-specific configuration directory.
 configDir :: B.ByteString
