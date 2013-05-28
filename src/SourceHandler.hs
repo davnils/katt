@@ -12,20 +12,25 @@
 -- Java also requires identifying which file contains the Main class.
 --
 
-module SourceHandler (parseFilter, findFiles, determineLanguage, findMainClass) where
+module SourceHandler (parseFilter, findFiles, determineLanguage, findMainClass, languageKattisName, languageContentType) where
 
-import Control.Applicative
+import Control.Applicative ((<$>))
 import Control.Arrow ((***))
 import Control.Monad
 import qualified Data.ByteString.Char8 as B
 import Data.List
+import qualified Data.Set as Set
 import System.Directory
-import System.IO
+import System.FilePath (takeBaseName, takeExtension)
+import Text.Parsec
+import Text.Parsec.ByteString
 import Utils
 
--- | All supported source file extensions.
-supportedExtensions :: [String]
-supportedExtensions = [".cc", ".hpp", ".cpp", ".c", ".h"]
+-- | All supported source file extensions, per language.
+supported :: KattisLanguage -> Set.Set FilePath
+supported LangCplusplus = Set.fromList [".cc", ".cpp", ".hpp", ".h"]
+supported LangC         = Set.fromList [".c", ".h"]
+supported LangJava      = Set.fromList [".java"]
 
 -- | Parse an argument list from the +file1 -file2 style into
 --   two lists of file paths (included and ignored files).
@@ -50,27 +55,60 @@ findFiles = explore "" "."
     nextDepth <- mapM exploreDir dirs
     return $ sourceFiles ++ concat nextDepth
 
-  isValidSourceFile file = any (`isSuffixOf` file) supportedExtensions
+  isValidSourceFile file = any (`isSuffixOf` file)
+    (Set.toList . Set.unions $ map supported [LangCplusplus, LangC, LangJava])
   exploreDir dir = explore (dir ++ "/") dir
 
--- | Determine source code language based on file extensions.
+-- | Determine source code language by studying file extensions.
+--   There is an implicit priority ordering, since C is a subset of C++.
 determineLanguage :: [FilePath] -> Maybe KattisLanguage
-determineLanguage = undefined
+determineLanguage files
+  | is LangC = Just LangC
+  | is LangCplusplus = Just LangCplusplus
+  | is LangJava = Just LangJava
+  | otherwise = Nothing
+  where
+  fileSet = Set.fromList $ map takeExtension files
+  is lang = fileSet `Set.isSubsetOf` (supported lang)
 
--- | Locate main class based on file paths and contents.
+-- | Locate main class based on source file contents.
+--   C++ and C solutions do not need to be specified, returns an empty string.
+--
+--   In the Java case all souce code files are parsed.
+--   All occurences of a /main/ method defined with /public static void/ are located.
+--
+--   Will return 'Data.Maybe.Nothing' if result is ambiguous.
+--
+--   WARNING: Currently limited to classes named to the basename of the file.
 findMainClass :: ([FilePath], KattisLanguage) -> IO (Maybe FilePath)
-findMainClass = undefined
+findMainClass ([], _)            = return Nothing
+findMainClass (_, LangCplusplus) = return $ Just ""
+findMainClass (_, LangC)         = return $ Just ""
+findMainClass (files, LangJava)  = survey <$> filterM containsMain files
+  where
+  containsMain file = do
+    parseResult <- parseFromFile mainParser file
+    case parseResult of
+      Right _ -> return True
+      Left _ -> return False
+
+  mainParser = manyTill (lineComment <|> blockComment <|> void anyChar) mainFunc
+  blockComment = void $ string "/*" >> manyTill anyChar (try $ string "*/")
+  lineComment = void . try $ string "//" >> manyTill anyChar newline
+  mainFunc = try $ mapM_ keyWord ["public", "static", "void"]
+  keyWord str = void $ string str >> spaces
+
+  survey [singleton] = Just $ takeBaseName singleton
+  survey _ = Nothing
 
 -- | Determine content type of submission language.
--- TODO: Verify all non-c++ types.
 languageContentType :: KattisLanguage -> B.ByteString
 languageContentType LangCplusplus = "text/x-c++src"
 languageContentType LangJava = "text/x-c++src"
 languageContentType LangC = "text/x-c++src"
 
 -- | Determine Kattis language string identifier.
--- TODO: Verify all non-c++ names.
 languageKattisName :: KattisLanguage -> B.ByteString
 languageKattisName LangCplusplus = "C++"
-languageKattisName LangJava = "C"
-languageKattisName LangC = "Java"
+languageKattisName LangJava = "Java"
+languageKattisName LangC = "C"

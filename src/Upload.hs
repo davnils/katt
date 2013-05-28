@@ -47,16 +47,16 @@ data MultiPartField
   | File FilePath
 
 -- | Serialize a chunk based on a file to be submitted.
-buildChunk :: MultiPartField -> IO B.ByteString
-buildChunk (File path) = do
+buildChunk :: B.ByteString -> MultiPartField -> IO B.ByteString
+buildChunk langStr (File path) = do
   file <- B.readFile path
-  return $ B.intercalate crlf [headerLine, "Content-Type: text/x-c++src", "", file, ""]
+  return $ B.intercalate crlf [headerLine, "Content-Type: " <> langStr, "", file, ""]
   where
     headerLine = B.intercalate "; " ["Content-Disposition: form-data", "name=\"sub_file[]\"",
                                      B.concat ["filename=\"", B.pack path, "\""]]
 
 -- | Serialize a chunk based on an option.
-buildChunk (Option fields payload) = return $ B.intercalate crlf [headerLine, "", payload, ""]
+buildChunk _ (Option fields payload) = return $ B.intercalate crlf [headerLine, "", payload, ""]
   where
     headerLine = B.intercalate "; " fieldList
     fieldList = "Content-Disposition: form-data" : fields
@@ -220,6 +220,8 @@ parseStatus = skip >> status
   conv _ = Other
 
 -- | Parse the status of all test cases, beginning from any offset in the page data.
+--   May return zero test cases when a submission fails
+--   with certain status values, e.g. /Compile Error/.
 parseTestCases :: GenParser Char st [TestCase] 
 parseTestCases = skip >> tests
   where
@@ -232,7 +234,7 @@ parseTestCases = skip >> tests
   skip = manyTill anyChar (void (try beginTests) <|> eof)
 
   -- Parse all test cases.
-  tests = many1 testCase
+  tests = many testCase
 
   -- Each test case is basically <span [class="status"]>...</span> 
   -- where a missing class attribute implies that it hasn't been executed.
@@ -250,18 +252,33 @@ parseTestCases = skip >> tests
   mapResult _ = parserZero
 
 -- | Print the result of a submission.
+--   Will also take care of the special case when no test cases were parsed.
 printResult :: [TestCase] -> SubmissionState -> IO ()
 printResult tests state
   | state == Accepted = putStrLn $ "Accepted, " <> numTests <> " test(s) passed."
-  | otherwise = putStrLn $ "Result: " <> show state <> ", failed on test case " <>
-                           firstFailed <> " of " <> numTests
+  | null tests = putStrLn resultStr
+  | otherwise = putStrLn $ resultStr <> testCaseStr
   where
   numTests = show $ length tests
   firstFailed = show . (+1) . fromMaybe 0 $ findIndex (/= TestPassed) tests
+  resultStr = "Result: " <> show state
+  testCaseStr = ", failed on test case " <> firstFailed <> " of " <> numTests
+
 
 -- | Submit a solution, given problem name and source code files.
 submitSolution :: Submission -> AuthEnv IO SubmissionId
 submitSolution (problem, files) = do
+  -- Determine language in submission.
+  language <- noteT ("\nFailed to decide submission language\n" <>
+                    "Please use either Java or some union of C++ and C")
+    . hoistMaybe $ determineLanguage files
+  let languageStr = languageKattisName language
+
+  mainClassStr <- join . liftIO $
+    (noteT "Failed to locate main class - is there any?" . hoistMaybe)
+      <$> findMainClass (files, language)
+
+  -- Build HTTP headers and form.
   let multiPartSeparator = "separator"
 
   conf <- lift . lift $ lift S.get
@@ -274,22 +291,24 @@ submitSolution (problem, files) = do
 
   let postFields = [Option ["name=\"submit\""] "true"]
                 <> [Option ["name=\"submit_ctr\""] "2"]
-                <> [Option ["name=\"language\""] "C++"]
-                <> [Option ["name=\"mainclass\""] ""]
+                <> [Option ["name=\"language\""] languageStr]
+                <> [Option ["name=\"mainclass\""] (B.pack mainClassStr)]
                 <> [Option ["name=\"problem\""] problemName]
                 <> [Option ["name=\"tag\""] ""]
                 <> [Option ["name=\"script\""] "true"]
                 <> map File files
 
+  -- Send request.
   conn <- lift . lift $ S.get
   tryIO $ sendRequest conn header (\o -> do
     mapM_ (\part -> do
-        serialized <- buildChunk part
+        serialized <- buildChunk (languageContentType language) part
         write (Just . fromByteString $ B.concat ["--", multiPartSeparator, crlf, serialized]) o)
       postFields
 
     write (Just . fromByteString $ B.concat ["--", multiPartSeparator, "--", crlf]) o
     )
 
+  -- Receive server response.
   reply <- tryIO $ receiveResponse conn concatHandler
   tryRead "Failed to parse submission id from server" . B.unpack $ reply =~ ("[0-9]+" :: B.ByteString)
