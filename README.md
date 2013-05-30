@@ -12,7 +12,7 @@ Basically a problem is initialized as follows
 Source files, problem names, and language identification is handled 
 automatically when submitting solutions:
 
-    > vim hello.java
+    > vim Hello.java
     > katt submit
     Made submission 4712
     Accepted: 1 of 1 test(s) passed
@@ -20,7 +20,7 @@ automatically when submitting solutions:
 There is also built-in support for problem sessions,
 which initializes all problems in the problem list.
 
-#### Available subcommands
+#### Command overview
 
     init <problem>
       Create the corresponding directory and download any available tests.
@@ -29,7 +29,7 @@ which initializes all problems in the problem list.
       Initialize all problems associated to the problem session, given as an integer id.
 
     submit [+add_file] [-skip_file]
-      Make a submission using the problem name associated to the current directory.
+      Make a submission using the problem name read from a local config.
       Defaults to recursively including all source and header files that can be found.
       Use the optional filter arguments to include or exclude files.
 

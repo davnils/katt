@@ -58,7 +58,7 @@ printHelp = putStrLn $
   "init-session <session>\n" <>
   "  Initialize all problems associated to the problem session, given as an integer id.\n\n" <>
   "submit [+add_file] [-skip_file]\n" <>
-  "  Make a submission using the problem name associated to the current directory.\n" <>
+  "  Make a submission using the problem name read from a local config.\n" <>
   "  Defaults to recursively including all source and header files that can be found.\n" <>
   "  Use the optional filter arguments to include or exclude files.\n\n" <>
   "Note that you will need a valid configuration file (placed in ~/.kattisrc), such as:\n" <>
