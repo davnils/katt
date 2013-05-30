@@ -275,7 +275,7 @@ submitSolution (problem, files) = do
   let languageStr = languageKattisName language
 
   mainClassStr <- join . liftIO $
-    (noteT "Failed to locate main class - is there any?" . hoistMaybe)
+    (noteT "Failed to locate the \"public static void main\" method - is there any?" . hoistMaybe)
       <$> findMainClass (files, language)
 
   -- Build HTTP headers and form.

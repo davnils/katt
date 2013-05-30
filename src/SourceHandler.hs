@@ -9,8 +9,7 @@
 -- Language identification is required in order to detect any
 -- inconsistencies (e.g. combining Java and C), and to tag submissions.
 --
--- Java also requires identifying which file contains the Main class.
---
+-- Java also requires identifying which file provides the main method.
 
 module SourceHandler (parseFilter, findFiles, determineLanguage, findMainClass, languageKattisName, languageContentType) where
 
@@ -78,8 +77,6 @@ determineLanguage files
 --   All occurences of a /main/ method defined with /public static void/ are located.
 --
 --   Will return 'Data.Maybe.Nothing' if result is ambiguous.
---
---   WARNING: Currently limited to classes named to the basename of the file.
 findMainClass :: ([FilePath], KattisLanguage) -> IO (Maybe FilePath)
 findMainClass ([], _)            = return Nothing
 findMainClass (_, LangCplusplus) = return $ Just ""
@@ -92,10 +89,13 @@ findMainClass (files, LangJava)  = survey <$> filterM containsMain files
       Right _ -> return True
       Left _ -> return False
 
-  mainParser = manyTill (lineComment <|> blockComment <|> void anyChar) mainFunc
+  mainParser = manyTill
+    (lineComment <|> blockComment <|> stringData <|> void anyChar)
+    mainFunc
   blockComment = void $ string "/*" >> manyTill anyChar (try $ string "*/")
   lineComment = void . try $ string "//" >> manyTill anyChar newline
-  mainFunc = try $ mapM_ keyWord ["public", "static", "void"]
+  stringData = void $ char '"' >> manyTill anyChar (char '"')
+  mainFunc = try $ mapM_ keyWord ["public", "static", "void", "main"]
   keyWord str = void $ string str >> spaces
 
   survey [singleton] = Just $ takeBaseName singleton
