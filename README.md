@@ -37,7 +37,8 @@ which initializes all problems in the problem list.
 #### Installation
 
 Get started by downloading a *.kattisrc* config from
-the official site, make sure you have the haskell platform
+the official site, make sure you have 
+[the Haskell Platform](http://www.haskell.org/platform/) 
 installed, then run *cabal install katt*.
 
 Feel free to post an issue or pull request if there is something
