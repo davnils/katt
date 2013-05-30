@@ -1,5 +1,4 @@
-katt - CLI for the Kattis judge system
-======================================
+### katt - CLI for the Kattis judge system
 
 Unofficial [Kattis](https://kth.kattis.scrool.se) CLI written in a git-like fashion, supports automatic
 downloading of test cases, easy submissions, and more.
@@ -21,7 +20,8 @@ automatically when submitting solutions:
 There is also built-in support for problem sessions,
 which initializes all problems in the problem list.
 
-Here is an overview of the currently available subcommands:
+#### Available subcommands
+
     init <problem>
       Create the corresponding directory and download any available tests.
 
@@ -34,8 +34,7 @@ Here is an overview of the currently available subcommands:
       Use the optional filter arguments to include or exclude files.
 
 
-Installation
-------------
+#### Installation
 
 Get started by downloading a *.kattisrc* config from
 the official site, make sure you have the haskell platform
@@ -43,6 +42,5 @@ installed, then run *cabal install katt*.
 
 Feel free to post an issue or pull request if there is something
 buggy (very likely in beta) or some improvement.
-
 Please note that the beta release is limited to C, C++ and Java.
 It also only supports running on nix-like systems.
