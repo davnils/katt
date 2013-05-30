@@ -1,7 +1,7 @@
-katt - unoffical CLI for the Kattis online judge system (beta)
---------------------------------------------------------------
+katt - CLI for the Kattis judge system
+======================================
 
-Kattis CLI written in a git-like fashion, supports automatic
+Unofficial [Kattis](https://kth.kattis.scrool.se) CLI written in a git-like fashion, supports automatic
 downloading of test cases, easy submissions, and more.
 
 Basically a problem is initialized as follows
@@ -20,6 +20,22 @@ automatically when submitting solutions:
 
 There is also built-in support for problem sessions,
 which initializes all problems in the problem list.
+
+Here is an overview of the currently available subcommands:
+    init <problem>
+      Create the corresponding directory and download any available tests.
+
+    init-session <session>
+      Initialize all problems associated to the problem session, given as an integer id.
+
+    submit [+add_file] [-skip_file]
+      Make a submission using the problem name associated to the current directory.
+      Defaults to recursively including all source and header files that can be found.
+      Use the optional filter arguments to include or exclude files.
+
+
+Installation
+------------
 
 Get started by downloading a *.kattisrc* config from
 the official site, make sure you have the haskell platform

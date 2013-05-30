@@ -29,9 +29,6 @@ description:         Unofficial CLI client for the Kattis online judge system (c
                      the official site, make sure you have the haskell platform
                      installed, then run /cabal install katt/.
                      .
-                     Feel free to post an issue or pull request if there is something
-                     buggy (very likely in beta) or some improvement.
-                     .
                      Please note that the beta release is limited to C, C++ and Java.
                      It also only supports running on unix.
 
@@ -73,3 +70,7 @@ executable katt
                      unix == 2.6.*,
                      url == 2.1.*,
                      zip-archive == 0.1.*
+
+source-repository head
+  type: git
+  location: https://github.com/davnils/katt.git

@@ -52,14 +52,15 @@ parseArgs conf = getArgs >>= parse
 -- | Print help text.
 printHelp :: IO ()
 printHelp = putStrLn $
-  "The following command are available:\n\n" <>
+  "The following commands are available:\n\n" <>
   "init <problem>\n" <>
-  "  Creates the corresponding directory and downloads any tests.\n\n" <>
+  "  Create the corresponding directory and download any available tests.\n\n" <>
   "init-session <session>\n" <>
-  "  Initialize all problems associated to the problem session (given as an integer).\n\n" <>
+  "  Initialize all problems associated to the problem session, given as an integer id.\n\n" <>
   "submit [+add_file] [-skip_file]\n" <>
-  "  Makes a submission using the problem name associated to the current directory.\n" <>
-  "  Defaults to recursively including all source and header files that can be found.\n\n" <>
+  "  Make a submission using the problem name associated to the current directory.\n" <>
+  "  Defaults to recursively including all source and header files that can be found.\n" <>
+  "  Use the optional filter arguments to include or exclude files.\n\n" <>
   "Note that you will need a valid configuration file (placed in ~/.kattisrc), such as:\n" <>
   "https://kth.kattis.scrool.se/download/kattisrc\n"
 
