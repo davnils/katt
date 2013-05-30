@@ -114,6 +114,6 @@ saveProjectConfig = do
   where
   serialize problemName = EitherT . return . fmapL convertErrorDesc $ do
     let conf = emptyCP
-    conf <- add_section conf "problem"
-    conf <- add_section conf "submissions"
-    set conf "problem" "problemname" $ B.unpack problemName
+    conf' <- add_section conf "problem"
+    conf'' <- add_section conf' "submissions"
+    set conf'' "problem" "problemname" $ B.unpack problemName
