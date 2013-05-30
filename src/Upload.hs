@@ -101,7 +101,7 @@ data TestCase
 --   Note that 'Other' is listed as final.
 finalSubmissionState :: SubmissionState -> Bool
 finalSubmissionState s = elem s
-  [WrongAnswer, TimeLimitExceeded, CompileError, Accepted, Other]
+  [WrongAnswer, TimeLimitExceeded, Accepted, CompileError, RunTimeError, Other]
 
 -- | Make a submission of the project in the working directory.
 --   Accepts a list of filters on the form /+file1 -file2 ../, which are
