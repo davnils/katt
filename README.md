@@ -1,4 +1,4 @@
-### katt - CLI for the Kattis judge system
+### katt - CLI for the Kattis judge system      [![Build Status](https://travis-ci.org/davnils/katt.png)](https://travis-ci.org/davnils/katt)
 
 Unofficial [Kattis](https://kth.kattis.scrool.se) CLI written in a git-like fashion, supports automatic
 downloading of test cases, easy submissions, and more.
