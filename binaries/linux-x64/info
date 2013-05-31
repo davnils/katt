@@ -1,0 +1,21 @@
+Compressed and partially statically linked. Depends on:
+
+libz
+libcrypto
+libssl
+libgmp
+
+libpthread
+librt
+libm
+libc
+libdl
+
+Should work out of the box on standard KTH Ubuntu installations.
+
+Hashes:
+
+SHA256
+db0c76615bf9fae427b31039f275fa3b538c0d1a4c78f8e27ab9d49ec89a50d6
+MD5
+0af2a56086ae0a419474088e86e4f6d1

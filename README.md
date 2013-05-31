@@ -41,6 +41,8 @@ the official site, make sure you have
 [the Haskell Platform](http://www.haskell.org/platform/) 
 installed, then run *cabal install katt*.
 
+There are also binaries available for x64 linux.  
+
 Feel free to post an issue or pull request if there is something
 buggy (very likely in beta) or some improvement.
 Please note that the beta release is limited to C, C++ and Java.
