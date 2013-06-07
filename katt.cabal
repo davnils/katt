@@ -46,7 +46,11 @@ category:            Utils
 build-type:          Simple
 cabal-version:       >=1.8
 
--- Support building on earlier GHC, at least 7.4.1 and 7.4.2
+-- Support building on earlier GHC, at least 7.4.1 and 7.4.2.
+-- The current solution does not scale very well since dependencies
+-- are listed under each section (lib, exe, test1, test2, ..)
+-- see https://github.com/haskell/cabal/issues/417
+-- and the related discussion.
 
 library
   hs-source-dirs:    katt-lib/src
@@ -87,6 +91,48 @@ library
 executable katt
   hs-source-dirs:    katt-cli/src
   main-is:           Main.hs
+  ghc-options:       -O2 -threaded -Wall
+
+  if impl(ghc <= 7.4.2)
+    build-depends:  
+                     base == 4.5.*,
+                     bytestring >= 0.9.2.1
+  else
+    build-depends:  
+                     base == 4.6.*,
+                     bytestring == 0.10.*
+  
+  build-depends:     
+                     http-streams == 0.6.*,
+                     HsOpenSSL >= 0.10.3 && < 0.11,
+                     katt,
+                     mtl >= 2.0 && < 2.2
+
+Test-Suite test-katt-init
+  type:              exitcode-stdio-1.0
+  hs-source-dirs:    katt-tests/src
+  main-is:           TestInit.hs
+  ghc-options:       -O2 -threaded -Wall
+
+  if impl(ghc <= 7.4.2)
+    build-depends:  
+                     base == 4.5.*,
+                     bytestring >= 0.9.2.1
+  else
+    build-depends:  
+                     base == 4.6.*,
+                     bytestring == 0.10.*
+  
+  build-depends:     
+                     http-streams == 0.6.*,
+                     HsOpenSSL >= 0.10.3 && < 0.11,
+                     katt,
+                     mtl >= 2.0 && < 2.2
+
+Test-Suite test-katt-sourcehandler
+  type:              exitcode-stdio-1.0
+  hs-source-dirs:    katt-tests/src
+  main-is:           TestSourceHandler.hs
   ghc-options:       -O2 -threaded -Wall
 
   if impl(ghc <= 7.4.2)
