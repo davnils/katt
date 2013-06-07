@@ -12,17 +12,17 @@
 
 module Main(main) where
 
-import qualified Configuration as C
+import qualified Utils.Katt.Configuration as C
 import Control.Monad.State
 import qualified Data.ByteString.Char8 as B
 import Data.Monoid ((<>))
-import Init
+import Utils.Katt.Init
 import Network.Http.Client
 import OpenSSL (withOpenSSL)
 import System.Environment
 import System.Exit (exitFailure)
-import Upload
-import Utils
+import Utils.Katt.Upload
+import Utils.Katt.Utils
 
 -- | Main loads the global config and runs argument parsing.
 main :: IO ()

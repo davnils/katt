@@ -3,12 +3,14 @@
 
 --------------------------------------------------------------------
 -- |
--- Module : Utils
+-- Module : Utils.Katt.Utils
 --
 -- Contains shared type declarations and various utility functions.
 --
 
-module Utils where
+module
+Utils.Katt.Utils
+where
 
 import Control.Applicative ((<$>))
 import Control.Error hiding (tryIO)

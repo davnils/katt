@@ -2,7 +2,7 @@
 
 --------------------------------------------------------------------
 -- |
--- Module : SourceHandler
+-- Module : Utils.Katt.SourceHandler
 --
 -- Provides searching of source code files and language identification.
 --
@@ -11,7 +11,9 @@
 --
 -- Java also requires identifying which file provides the main method.
 
-module SourceHandler (parseFilter, findFiles, determineLanguage, findMainClass, languageKattisName, languageContentType) where
+module Utils.Katt.SourceHandler
+(parseFilter, findFiles, determineLanguage, findMainClass, languageKattisName, languageContentType)
+where
 
 import Control.Applicative ((<$>))
 import Control.Arrow ((***))
@@ -23,7 +25,7 @@ import System.Directory
 import System.FilePath (takeBaseName, takeExtension)
 import Text.Parsec
 import Text.Parsec.ByteString
-import Utils
+import Utils.Katt.Utils
 
 -- | All supported source file extensions, per language.
 supported :: KattisLanguage -> Set.Set FilePath

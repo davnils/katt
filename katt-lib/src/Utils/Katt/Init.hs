@@ -3,7 +3,7 @@
 
 --------------------------------------------------------------------
 -- |
--- Module : Init
+-- Module : Utils.Katt.Init
 --
 -- Init submodule providing initialization of problems
 -- and entire problem sessions.
@@ -15,13 +15,15 @@
 -- Problem sessions are initialized by parsing the list of problems and
 -- initializing each problem separately.
 
-module Init (initializeProblem, initializeSession) where
+module Utils.Katt.Init
+(initializeProblem, initializeSession)
+where
 
 import Control.Applicative ((<$>), (<*))
 import Codec.Archive.Zip
 import Control.Arrow ((***))
 import qualified Control.Monad.State as S
-import qualified Configuration as C
+import qualified Utils.Katt.Configuration as C
 import Control.Error hiding (tryIO)
 import qualified Control.Exception as E
 import Control.Monad.Reader
@@ -34,7 +36,7 @@ import System.Directory
 import System.IO (stderr)
 import Text.Parsec hiding (token)
 import Text.Parsec.ByteString
-import Utils
+import Utils.Katt.Utils
 
 -- | Parsed test cases associated with a problem.
 type TestContent = [(B.ByteString, B.ByteString)]

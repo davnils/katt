@@ -2,7 +2,7 @@
 
 --------------------------------------------------------------------
 -- |
--- Module : Configuration
+-- Module : Utils.Katt.Configuration
 --
 -- Implements loading and saving of global and local configurations.
 -- All configurations are stored in the 'ConfigFile' format, which is
@@ -15,7 +15,9 @@
 -- is created by the 'Init' submodule.
 -- Currently only the problem name is stored.
 
-module Configuration (loadGlobalConfig, projectConfigExists, loadProjectConfig, saveProjectConfig) where
+module Utils.Katt.Configuration
+(loadGlobalConfig, projectConfigExists, loadProjectConfig, saveProjectConfig)
+where
 
 import Control.Error hiding (tryIO)
 import Control.Monad
@@ -28,7 +30,7 @@ import qualified Network.URL as U
 import System.Directory (getHomeDirectory)
 import System.IO
 import System.IO.Error (catchIOError)
-import Utils
+import Utils.Katt.Utils
 
 -- | Path to global configuration file, relative home directory.
 globalConfigFile :: FilePath

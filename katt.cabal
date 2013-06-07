@@ -46,14 +46,18 @@ category:            Utils
 build-type:          Simple
 cabal-version:       >=1.8
 
+-- Support building on earlier GHC, at least 7.4.1 and 7.4.2
 
-executable katt
-  hs-source-dirs:    src
-  main-is:           Main.hs
-  other-modules:     Init, Upload, Configuration, Utils, SourceHandler
-  ghc-options:       -O2 -threaded -Wall
+library
+  hs-source-dirs:    katt-lib/src
+  exposed-modules:   Utils.Katt.Configuration,
+                     Utils.Katt.Init,
+                     Utils.Katt.SourceHandler,
+                     Utils.Katt.Upload,
+                     Utils.Katt.Utils
 
-  -- Support building on earlier GHC, at least 7.4.1 and 7.4.2
+  ghc-options:       -threaded -Wall
+
   if impl(ghc <= 7.4.2)
     build-depends:  
                      base == 4.5.*,
@@ -79,6 +83,26 @@ executable katt
                      unix == 2.6.*,
                      url == 2.1.*,
                      zip-archive == 0.1.*
+
+executable katt
+  hs-source-dirs:    katt-cli/src
+  main-is:           Main.hs
+  ghc-options:       -O2 -threaded -Wall
+
+  if impl(ghc <= 7.4.2)
+    build-depends:  
+                     base == 4.5.*,
+                     bytestring >= 0.9.2.1
+  else
+    build-depends:  
+                     base == 4.6.*,
+                     bytestring == 0.10.*
+  
+  build-depends:     
+                     http-streams == 0.6.*,
+                     HsOpenSSL >= 0.10.3 && < 0.11,
+                     katt,
+                     mtl == 2.1.*
 
 source-repository head
   type: git

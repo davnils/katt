@@ -2,7 +2,7 @@
 
 --------------------------------------------------------------------
 -- |
--- Module : Upload
+-- Module : Utils.Katt.Upload
 --
 -- Upload submodule providing submissions of solutions and parsing of results.
 --
@@ -14,11 +14,13 @@
 -- Currently multipart data upload is implemented since https-streams
 -- (the HTTP client being used) does not support it (yet?).
 
-module Upload (makeSubmission) where
+module Utils.Katt.Upload
+(makeSubmission)
+where
 
 import Control.Applicative ((<$>))
 import Blaze.ByteString.Builder (fromByteString)
-import qualified Configuration as C
+import qualified Utils.Katt.Configuration as C
 import Control.Concurrent (threadDelay)
 import Control.Error hiding (tryIO)
 import Control.Monad.Reader
@@ -28,11 +30,11 @@ import Data.List ((\\), union, findIndex)
 import Data.Maybe (fromJust)
 import Data.Monoid ((<>))
 import Network.Http.Client
-import SourceHandler
+import Utils.Katt.SourceHandler
 import System.IO.Streams (write)
 import Text.Parsec hiding (token)
 import Text.Parsec.ByteString
-import Utils
+import Utils.Katt.Utils
 
 -- | Line separator used in HTTP headers. 
 crlf :: B.ByteString
