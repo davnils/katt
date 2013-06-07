@@ -54,13 +54,6 @@ executable katt
   ghc-options:       -O2 -threaded -Wall
 
   -- Support building on earlier GHC, at least 7.4.1 and 7.4.2
-  if impl(ghc <= 7.4.1)
-    build-depends:  
-                     regex-posix == 0.95.1
-  else
-    build-depends:  
-                     regex-posix == 0.95.*
-
   if impl(ghc <= 7.4.2)
     build-depends:  
                      base == 4.5.*,

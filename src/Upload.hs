@@ -32,7 +32,6 @@ import SourceHandler
 import System.IO.Streams (write)
 import Text.Parsec hiding (token)
 import Text.Parsec.ByteString
-import Text.Regex.Posix
 import Utils
 
 -- | Line separator used in HTTP headers. 
@@ -309,6 +308,11 @@ submitSolution (problem, files) = do
     write (Just . fromByteString $ B.concat ["--", multiPartSeparator, "--", crlf]) o
     )
 
-  -- Receive server response.
+  -- Receive server response and parse submission ID.
   reply <- tryIO $ receiveResponse conn concatHandler
-  tryRead "Failed to parse submission id from server" . B.unpack $ reply =~ ("[0-9]+" :: B.ByteString)
+  (EitherT . return  . fmapL (B.pack . show)) $
+    parse parseSubmissionId "Submission ID parser" reply
+
+  where
+  parseSubmissionId = manyTill anyChar (lookAhead identifier) >> identifier
+  identifier = read <$> many1 digit
