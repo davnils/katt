@@ -78,7 +78,7 @@ library
                      http-streams == 0.6.*,
                      HsOpenSSL >= 0.10.3 && < 0.11,
                      io-streams,
-                     mtl == 2.1.*,
+                     mtl >= 2.0 && < 2.2,
                      parsec == 3.1.*,
                      unix == 2.6.*,
                      url == 2.1.*,
@@ -102,7 +102,7 @@ executable katt
                      http-streams == 0.6.*,
                      HsOpenSSL >= 0.10.3 && < 0.11,
                      katt,
-                     mtl == 2.1.*
+                     mtl >= 2.0 && < 2.2
 
 source-repository head
   type: git
