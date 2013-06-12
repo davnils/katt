@@ -60,7 +60,7 @@ library
                      Utils.Katt.Upload,
                      Utils.Katt.Utils
 
-  ghc-options:       -threaded -Wall
+  ghc-options:       -Wall
 
   if impl(ghc <= 7.4.2)
     build-depends:  
@@ -108,26 +108,26 @@ executable katt
                      katt,
                      mtl >= 2.0 && < 2.2
 
-Test-Suite test-katt-init
-  type:              exitcode-stdio-1.0
-  hs-source-dirs:    katt-tests/src
-  main-is:           TestInit.hs
-  ghc-options:       -O2 -threaded -Wall
-
-  if impl(ghc <= 7.4.2)
-    build-depends:  
-                     base == 4.5.*,
-                     bytestring >= 0.9.2.1
-  else
-    build-depends:  
-                     base == 4.6.*,
-                     bytestring == 0.10.*
-  
-  build-depends:     
-                     http-streams == 0.6.*,
-                     HsOpenSSL >= 0.10.3 && < 0.11,
-                     katt,
-                     mtl >= 2.0 && < 2.2
+-- Test-Suite test-katt-init
+--   type:              exitcode-stdio-1.0
+--   hs-source-dirs:    katt-tests/src
+--   main-is:           TestInit.hs
+--   ghc-options:       -O2 -threaded -Wall
+-- 
+--   if impl(ghc <= 7.4.2)
+--     build-depends:  
+--                      base == 4.5.*,
+--                      bytestring >= 0.9.2.1
+--   else
+--     build-depends:  
+--                      base == 4.6.*,
+--                      bytestring == 0.10.*
+--   
+--   build-depends:     
+--                      http-streams == 0.6.*,
+--                      HsOpenSSL >= 0.10.3 && < 0.11,
+--                      katt,
+--                      mtl >= 2.0 && < 2.2
 
 Test-Suite test-katt-sourcehandler
   type:              exitcode-stdio-1.0
@@ -145,6 +145,7 @@ Test-Suite test-katt-sourcehandler
                      bytestring == 0.10.*
   
   build-depends:     
+                     directory == 1.2.*,
                      http-streams == 0.6.*,
                      HsOpenSSL >= 0.10.3 && < 0.11,
                      katt,
