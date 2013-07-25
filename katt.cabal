@@ -1,5 +1,5 @@
 name:                katt
-version:             0.1.0.0
+version:             0.2.0.0
 stability:           experimental
 
 synopsis:            Client for the Kattis judge system.
@@ -31,6 +31,16 @@ description:         Unofficial CLI client for the Kattis online judge system (c
                      .
                      Please note that the beta release is limited to C, C++ and Java.
                      It also only supports running on unix.
+                     .
+                     Changes since last release:
+                     .
+                       * Fix issues related to to new keep-alive handling
+                     .
+                       * New test suite
+                     .
+                       * Confirmed working with open kattis (www.kattis.com)
+                     .
+
 
 homepage:            https://github.com/davnils/katt
 bug-reports:         https://github.com/davnils/katt/issues
