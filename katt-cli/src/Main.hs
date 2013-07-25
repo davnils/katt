@@ -62,7 +62,7 @@ printHelp = putStrLn $
   "  Defaults to recursively including all source and header files that can be found.\n" <>
   "  Use the optional filter arguments to include or exclude files.\n\n" <>
   "Note that you will need a valid configuration file (placed in ~/.kattisrc), such as:\n" <>
-  "https://kth.kattis.scrool.se/download/kattisrc\n"
+  "https://www.kattis.com/download/kattisrc\n"
 
 -- | Given some action, initiate a connection and run it.
 --   Connections are layered using StateT since they may be reestablished.
