@@ -135,10 +135,13 @@ makeSubmission filterArguments = do
 
   tryIO . putStrLn $ "Made submission: " <> show submission
   tryIO $ threadDelay initialTimeout
+
+  -- Reauthenticate to allow future requests.
   reestablishConnection
+  token' <- authenticate 
 
   -- Poll submission page until completion.
-  token' <- authenticate 
+  reestablishConnection
   EitherT $ runReaderT
     (runEitherT $ checkSubmission submission) token'
 
@@ -299,8 +302,10 @@ submitSolution (problem, files) = do
                 <> [Option ["name=\"script\""] "true"]
                 <> map File files
 
-  -- Send request.
+  -- Send request. Connection is reestablished.
+  unWrapTrans reestablishConnection
   conn <- lift . lift $ S.get
+
   tryIO $ sendRequest conn header (\o -> do
     mapM_ (\part -> do
         serialized <- buildChunk (languageContentType language) part

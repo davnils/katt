@@ -113,6 +113,7 @@ parseEmbedded = TestContents <$> tests
 --   Matches input and output file pairs, producing a list of tuples.
 downloadTestArchive :: B.ByteString -> ConnEnv IO TestContent
 downloadTestArchive url = do
+  reestablishConnection
   zipFile <- BL.fromChunks . return <$> retrievePublicPage url
   zipEntries <- tryIOMsg "Failed to unpack zip file: corrupt archive" $
     E.evaluate (zEntries $ toArchive zipFile)
@@ -163,7 +164,12 @@ initializeSession :: Bool -> ProblemSession -> ConnEnv IO ()
 initializeSession retrieveTests session = do
   contents <- retrievePublicPage $ sessionPage <> (B.pack $ show session)
   problems <- nub <$> (EitherT . return  . fmapL (B.pack . show) $ parse' contents)
-  mapM_ (\problem -> initializeProblem True retrieveTests problem >> restoreDir) problems
+  mapM_ (\problem -> do
+      reestablishConnection
+      initializeProblem True retrieveTests problem
+      restoreDir
+    )
+    problems
   where
   parse' contents = parse (parseProblemList) "Problem list parser" contents
   restoreDir = liftIO $ setCurrentDirectory ".."
