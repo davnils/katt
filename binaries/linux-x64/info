@@ -1,4 +1,4 @@
-Compressed and partially statically linked. Depends on:
+Partially statically linked. Depends on:
 
 libz
 libcrypto
@@ -16,6 +16,6 @@ Should work out of the box on standard KTH Ubuntu installations.
 Hashes:
 
 SHA256
-db0c76615bf9fae427b31039f275fa3b538c0d1a4c78f8e27ab9d49ec89a50d6
+a20f688ec47e3fe4d20fc1294d87f6e1568658e4c48613455d06d3e8db710352
 MD5
-0af2a56086ae0a419474088e86e4f6d1
+c643db4dcd5f20af6d6bf8f1a3c7bddc
