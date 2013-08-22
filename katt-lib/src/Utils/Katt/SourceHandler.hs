@@ -70,7 +70,7 @@ determineLanguage files
   | otherwise = Nothing
   where
   fileSet = Set.fromList $ map takeExtension files
-  is lang = fileSet `Set.isSubsetOf` (supported lang)
+  is lang = fileSet `Set.isSubsetOf` supported lang
 
 -- | Locate main class based on source file contents.
 --   C++ and C solutions do not need to be specified, returns an empty string.

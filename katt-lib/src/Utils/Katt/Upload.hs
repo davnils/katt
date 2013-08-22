@@ -1,4 +1,4 @@
-{-# Language OverloadedStrings, ScopedTypeVariables #-}
+{-# Language OverloadedStrings #-}
 
 --------------------------------------------------------------------
 -- |
@@ -112,14 +112,14 @@ finalSubmissionState s = elem s
 --
 --   In addition to the filters, all recursively found source code files
 --   will be included in the submission.
-makeSubmission :: [String] -> ConnEnv IO ()
+makeSubmission :: [String] -> ConfigEnv IO ()
 makeSubmission filterArguments = do
   exists <- liftIO C.projectConfigExists
   tryAssert "No project configuration could be found."
     exists
 
-  unWrapTrans C.loadProjectConfig
-  problem <- lift . lift $ (fromJust <$> S.gets project)
+  C.loadProjectConfig
+  problem <- fromJust <$> S.gets project
 
   -- Locate all source files, filter based on filter list.
   files <- tryIOMsg "Failed to locate source files" findFiles
@@ -137,11 +137,9 @@ makeSubmission filterArguments = do
   tryIO $ threadDelay initialTimeout
 
   -- Reauthenticate to allow future requests.
-  reestablishConnection
   token' <- authenticate 
 
   -- Poll submission page until completion.
-  reestablishConnection
   EitherT $ runReaderT
     (runEitherT $ checkSubmission submission) token'
 
@@ -166,7 +164,6 @@ checkSubmission submission = do
       tryIO $ printResult tests state
     else do
       tryIO $ putStrLn "Waiting for completion.." >> threadDelay interval
-      unWrapTrans reestablishConnection
       checkSubmission submission
    
   where
@@ -285,7 +282,7 @@ submitSolution (problem, files) = do
   -- Build HTTP headers and form.
   let multiPartSeparator = "separator"
 
-  conf <- lift . lift $ lift S.get
+  conf <- S.get
   header <- makeSignedRequest $ do
     http POST ("/" <> submitPage conf)
     defaultRequest
@@ -302,21 +299,20 @@ submitSolution (problem, files) = do
                 <> [Option ["name=\"script\""] "true"]
                 <> map File files
 
-  -- Send request. Connection is reestablished.
-  unWrapTrans reestablishConnection
-  conn <- lift . lift $ S.get
+  reply <- unWrapTrans . withConn $ \conn -> do
+    -- Send request.
+    sendRequest conn header (\o -> do
+      mapM_ (\part -> do
+          serialized <- buildChunk (languageContentType language) part
+          write (Just . fromByteString $ B.concat ["--", multiPartSeparator, crlf, serialized]) o)
+        postFields
 
-  tryIO $ sendRequest conn header (\o -> do
-    mapM_ (\part -> do
-        serialized <- buildChunk (languageContentType language) part
-        write (Just . fromByteString $ B.concat ["--", multiPartSeparator, crlf, serialized]) o)
-      postFields
+      write (Just . fromByteString $ B.concat ["--", multiPartSeparator, "--", crlf]) o
+      )
 
-    write (Just . fromByteString $ B.concat ["--", multiPartSeparator, "--", crlf]) o
-    )
+    -- Receive server response and parse submission ID.
+    receiveResponse conn concatHandler
 
-  -- Receive server response and parse submission ID.
-  reply <- tryIO $ receiveResponse conn concatHandler
   (EitherT . return  . fmapL (B.pack . show)) $
     parse parseSubmissionId "Submission ID parser" reply
 

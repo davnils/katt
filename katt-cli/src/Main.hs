@@ -17,7 +17,6 @@ import Control.Monad.State
 import qualified Data.ByteString.Char8 as B
 import Data.Monoid ((<>))
 import Utils.Katt.Init
-import Network.Http.Client
 import OpenSSL (withOpenSSL)
 import System.Environment
 import System.Exit (exitFailure)
@@ -44,9 +43,9 @@ parseArgs :: ConfigState -> IO ()
 parseArgs conf = getArgs >>= parse
   where
   parse :: [String] -> IO ()
-  parse ("init" : problem : []) = withConn conf . initializeProblem True True . ProblemName $ B.pack problem
-  parse ("init-session" : session : []) = withConn conf . initializeSession True $ read session
-  parse ("submit" : filterList) = withConn conf $ makeSubmission filterList
+  parse ("init" : problem : []) = withConf conf . initializeProblem True True . ProblemName $ B.pack problem
+  parse ("init-session" : session : []) = withConf conf . initializeSession True $ read session
+  parse ("submit" : filterList) = withConf conf $ makeSubmission filterList
   parse _ = printHelp
 
 -- | Print help text.
@@ -64,15 +63,8 @@ printHelp = putStrLn $
   "Note that you will need a valid configuration file (placed in ~/.kattisrc), such as:\n" <>
   "https://www.kattis.com/download/kattisrc\n"
 
--- | Given some action, initiate a connection and run it.
---   Connections are layered using StateT since they may be reestablished.
-withConn :: ConfigState -> ConnEnv IO a -> IO a
-withConn conf action = do
-  B.putStrLn $ "Connecting to host: " <> host conf
-  conn <- establishConnection (host conf)
-  ((res, conn'), _) <- runStateT (withConf conn) conf
-  closeConnection conn'
+-- | Run an action with the supplied configuration.
+withConf :: ConfigState -> ConfigEnv IO a -> IO a
+withConf conf action = do
+  (res, _) <- runStateT (terminateOnFailure "Failed to run command" action) conf
   return res
-
-  where
-  withConf = runStateT (terminateOnFailure "Failed to run command" action)

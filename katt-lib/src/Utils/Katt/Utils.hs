@@ -1,5 +1,4 @@
-{-# Language OverloadedStrings, ScopedTypeVariables,
-    NoMonomorphismRestriction #-}
+{-# Language OverloadedStrings #-}
 
 --------------------------------------------------------------------
 -- |
@@ -29,14 +28,9 @@ type ConfigEnvInternal m = S.StateT ConfigState m
 -- | Configuration layer wrapped with error handling.
 type ConfigEnv m = EitherT ErrorDesc (ConfigEnvInternal m)
 
--- | Connection layer with connection state layered on the configuration layer.
-type ConnEnvInternal m = S.StateT Connection (ConfigEnvInternal m)
--- | Connection layer wrapped with error handling.
-type ConnEnv m = EitherT ErrorDesc (ConnEnvInternal m)
-
 -- | Authentication layer with token state and error handling,
---   wrapping the connection layer.
-type AuthEnv m = EitherT ErrorDesc (ReaderT B.ByteString (ConnEnvInternal m))
+--   wrapping the configuration layer.
+type AuthEnv m = EitherT ErrorDesc (ReaderT B.ByteString (ConfigEnvInternal m))
 
 -- | Submissions consist of a problem identifier and a set of file paths.
 type Submission = (KattisProblem, [FilePath])
@@ -131,6 +125,12 @@ tryIOMsg :: MonadIO m => B.ByteString -> IO a -> EitherT ErrorDesc m a
 tryIOMsg msg = EitherT . liftIO . liftM (fmapL $ const msg) . 
   (E.try :: (IO a -> IO (Either E.SomeException a)))
 
+withConn :: MonadIO m => (Connection -> IO a) -> ConfigEnv m a
+withConn f = do
+  host' <- host <$> S.get
+  conn <- tryIOMsg "Failed to establish connection" $ establishConnection host'
+  tryIO $ E.finally (f conn) (closeConnection conn) 
+
 -- | Evaluate an error action and terminate process upon failure.
 terminateOnFailure :: MonadIO m => ErrorDesc -> EitherT ErrorDesc m a -> m a
 terminateOnFailure msg state = do
@@ -153,18 +153,8 @@ defaultRequest = do
   setHeader "User-Agent" programName
   setHeader "Connection" "keep-alive"
 
--- | Reestablish an existing connection.
---   Useful in order to avoid timeouts related to keep-alive.
-reestablishConnection :: ConnEnv IO ()
-reestablishConnection = do
-  conn <- lift S.get
-  tryIOMsg "Failed to close connection" $ closeConnection conn
-  host' <- host <$> lift (lift S.get)
-  conn' <- tryIOMsg "Failed to reestablish connection" $ establishConnection host'
-  lift $ S.put conn'
-
 -- | Retrieve a publically available page, using HTTP GET.
-retrievePublicPage :: B.ByteString -> ConnEnv IO B.ByteString
+retrievePublicPage :: B.ByteString -> ConfigEnv IO B.ByteString
 retrievePublicPage page = do
   header <- tryIO . buildRequest $ http GET page >> defaultRequest
   makeRequest header
@@ -178,11 +168,10 @@ retrievePrivatePage page = do
   unWrapTrans $ makeRequest header
 
 -- | Make a HTTP request and retrieve the server response body.
-makeRequest :: Request -> ConnEnv IO B.ByteString
-makeRequest header = do
-  conn <- lift S.get
-  tryIO $ sendRequest conn header emptyBody
-  tryIO $ receiveResponse conn concatHandler
+makeRequest :: Request -> ConfigEnv IO B.ByteString
+makeRequest header = withConn $ \conn -> do
+  sendRequest conn header emptyBody
+  receiveResponse conn concatHandler
 
 -- | Extract correct temporary token from cookie header string.
 extractSessionHeader :: B.ByteString -> Maybe B.ByteString
@@ -197,9 +186,9 @@ extractSessionHeader headerStr
 
 -- | Authenticate an existing connection, returns a temporary token.
 --   Basically the API token is used to acquire a session-specific token.
-authenticate :: ConnEnv IO B.ByteString
+authenticate :: ConfigEnv IO B.ByteString
 authenticate = do
-  conf <- lift $ lift S.get
+  conf <- S.get
 
   header <- tryIO . buildRequest $ do
     http POST ("/" <> loginPage conf)
@@ -207,12 +196,12 @@ authenticate = do
     setContentType "application/x-www-form-urlencoded"
 
   let formData = [("token", apiKey conf), ("user", user conf), ("script", "true")] 
-  conn <- S.get
-  tryIO . sendRequest conn header $ encodedFormBody formData
 
-  (headers, response) <- tryIO $ receiveResponse conn (\headers stream -> do
-    response <- readExactly (B.length loginSuccess) stream
-    return (headers, response))
+  (headers, response) <- withConn $ \conn -> do
+    sendRequest conn header $ encodedFormBody formData
+    receiveResponse conn (\headers stream -> do
+      response <- readExactly (B.length loginSuccess) stream
+      return (headers, response))
 
   tryAssert ("Login failure. Server returned: '" <> response <> "'")
     (response == loginSuccess)
@@ -221,11 +210,12 @@ authenticate = do
     getHeader headers "Set-Cookie" >>= extractSessionHeader
 
 -- | Retrieve problem ID of a Kattis problem.
-retrieveProblemId :: KattisProblem -> ConnEnv IO Integer
+retrieveProblemId :: KattisProblem -> ConfigEnv IO Integer
 retrieveProblemId (ProblemId id') = return id'
 retrieveProblemId (ProblemName _) = undefined
 
 -- | Retrieve problem name of a Kattis problem.
-retrieveProblemName :: KattisProblem -> ConnEnv IO B.ByteString
+retrieveProblemName :: KattisProblem -> ConfigEnv IO B.ByteString
 retrieveProblemName (ProblemId _) = undefined
 retrieveProblemName (ProblemName name) = return name
+

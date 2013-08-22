@@ -1,4 +1,4 @@
-{-# Language OverloadedStrings, NoMonomorphismRestriction #-}
+{-# Language OverloadedStrings #-}
 
 --------------------------------------------------------------------
 -- |
@@ -22,7 +22,7 @@ where
 import Control.Error hiding (tryIO)
 import Control.Monad
 import qualified Control.Monad.State as S
-import Control.Monad.Trans (liftIO, lift)
+import Control.Monad.Trans (liftIO)
 import qualified Data.ByteString.Char8 as B
 import Data.ConfigFile
 import Data.Monoid ((<>))
@@ -99,12 +99,12 @@ loadProjectConfig :: ConfigEnv IO ()
 loadProjectConfig = do
   conf <- fmapLT convertErrorDesc $ join . liftIO $ readfile emptyCP projectConfigFile
   problem <- get' conf "problem" "problemname"
-  lift . S.modify $ \s -> s { project = Just . ProblemName $ B.pack problem}
+  S.modify $ \s -> s { project = Just . ProblemName $ B.pack problem}
 
 -- | Save a project-specific configuration file to disk.
-saveProjectConfig :: ConnEnv IO ()
+saveProjectConfig :: ConfigEnv IO ()
 saveProjectConfig = do
-  project' <- lift . lift $ S.gets project
+  project' <- S.gets project
   state <- noteT "Tried to save an empty project configuration." . hoistMaybe $ project'
   problemName <- retrieveProblemName state
   serialized <- serialize problemName

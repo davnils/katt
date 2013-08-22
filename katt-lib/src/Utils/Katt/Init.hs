@@ -1,5 +1,4 @@
-{-# Language OverloadedStrings, ScopedTypeVariables,
-    NoMonomorphismRestriction #-}
+{-# Language OverloadedStrings, ScopedTypeVariables #-}
 
 --------------------------------------------------------------------
 -- |
@@ -22,11 +21,10 @@ where
 import Control.Applicative ((<$>), (<*))
 import Codec.Archive.Zip
 import Control.Arrow ((***))
+import Control.Monad (liftM, liftM2, void, when)
 import qualified Control.Monad.State as S
-import qualified Utils.Katt.Configuration as C
 import Control.Error hiding (tryIO)
 import qualified Control.Exception as E
-import Control.Monad.Reader
 import qualified Data.ByteString.Char8 as B
 import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Foldable (fold)
@@ -36,6 +34,7 @@ import System.Directory
 import System.IO (stderr)
 import Text.Parsec hiding (token)
 import Text.Parsec.ByteString
+import qualified Utils.Katt.Configuration as C
 import Utils.Katt.Utils
 
 -- | Parsed test cases associated with a problem.
@@ -111,9 +110,8 @@ parseEmbedded = TestContents <$> tests
 
 -- | Retrieve the zip archive located at the specified URL and unzip the contents.
 --   Matches input and output file pairs, producing a list of tuples.
-downloadTestArchive :: B.ByteString -> ConnEnv IO TestContent
+downloadTestArchive :: B.ByteString -> ConfigEnv IO TestContent
 downloadTestArchive url = do
-  reestablishConnection
   zipFile <- BL.fromChunks . return <$> retrievePublicPage url
   zipEntries <- tryIOMsg "Failed to unpack zip file: corrupt archive" $
     E.evaluate (zEntries $ toArchive zipFile)
@@ -133,7 +131,7 @@ downloadTestArchive url = do
   getData = fold . BL.toChunks . fromEntry
 
 -- | Retrieve test cases, which fall into either one of the three categories.
-retrieveTestFiles :: KattisProblem -> ConnEnv IO TestContent
+retrieveTestFiles :: KattisProblem -> ConfigEnv IO TestContent
 retrieveTestFiles problem = do
   problemName <- retrieveProblemName problem
   problemPage <- retrievePublicPage $ problemAddress <> problemName
@@ -160,26 +158,25 @@ parseProblemList = skip >> endBy1 tag skip
     return . ProblemName $ B.pack problem
 
 -- | Given a problem session id, initialize all the corresponding problems.
-initializeSession :: Bool -> ProblemSession -> ConnEnv IO ()
+initializeSession :: Bool -> ProblemSession -> ConfigEnv IO ()
 initializeSession retrieveTests session = do
-  contents <- retrievePublicPage $ sessionPage <> (B.pack $ show session)
+  contents <- retrievePublicPage $ sessionPage <> B.pack (show session)
   problems <- nub <$> (EitherT . return  . fmapL (B.pack . show) $ parse' contents)
   mapM_ (\problem -> do
-      reestablishConnection
       initializeProblem True retrieveTests problem
       restoreDir
     )
     problems
   where
-  parse' contents = parse (parseProblemList) "Problem list parser" contents
-  restoreDir = liftIO $ setCurrentDirectory ".."
+  parse' = parse parseProblemList "Problem list parser"
+  restoreDir = S.liftIO $ setCurrentDirectory ".."
   -- TODO: restore to previously used directory
 
 -- | Given a problem identifier, setup directory structures and
 --   optionally download test cases.
-initializeProblem :: Bool -> Bool -> KattisProblem -> ConnEnv IO ()
+initializeProblem :: Bool -> Bool -> KattisProblem -> ConfigEnv IO ()
 initializeProblem mkDir retrieveTests problem = do
-  liftIO . putStrLn $ "Initializing problem: " <> show problem
+  S.liftIO . putStrLn $ "Initializing problem: " <> show problem
   problemName <- retrieveProblemName problem
   tryIO . when mkDir $ do
     createDirectoryIfMissing False (B.unpack problemName)
@@ -187,12 +184,12 @@ initializeProblem mkDir retrieveTests problem = do
 
   tryIO $ createDirectoryIfMissing False (B.unpack configDir)
 
-  fileExists <- liftIO C.projectConfigExists
+  fileExists <- S.liftIO C.projectConfigExists
   tryAssert
     "Project configuration file already exists, please remove it in order to continue."
     (not fileExists)
 
-  lift . lift . S.modify $ \s -> s { project = Just $ ProblemName problemName }
+  S.modify $ \s -> s { project = Just $ ProblemName problemName }
   C.saveProjectConfig
 
   when retrieveTests $ do
