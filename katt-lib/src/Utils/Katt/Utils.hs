@@ -81,6 +81,8 @@ data KattisLanguage
   | LangJava
   -- | C.
   | LangC
+  -- | Haskell.
+  | LangHaskell
   deriving (Eq, Show)
 
 -- | Server response indicating successful login.

@@ -32,6 +32,7 @@ supported :: KattisLanguage -> Set.Set FilePath
 supported LangCplusplus = Set.fromList [".cc", ".cpp", ".hpp", ".h"]
 supported LangC         = Set.fromList [".c", ".h"]
 supported LangJava      = Set.fromList [".java"]
+supported LangHaskell   = Set.fromList [".hs"]
 
 -- | Parse an argument list from the +file1 -file2 style into
 --   two lists of file paths (included and ignored files).
@@ -57,7 +58,7 @@ findFiles = explore "" "."
     return $ sourceFiles ++ concat nextDepth
 
   isValidSourceFile file = any (`isSuffixOf` file)
-    (Set.toList . Set.unions $ map supported [LangCplusplus, LangC, LangJava])
+    (Set.toList . Set.unions $ map supported [LangCplusplus, LangC, LangJava, LangHaskell])
   exploreDir dir = explore (dir ++ "/") dir
 
 -- | Determine source code language by studying file extensions.
@@ -67,6 +68,7 @@ determineLanguage files
   | is LangC = Just LangC
   | is LangCplusplus = Just LangCplusplus
   | is LangJava = Just LangJava
+  | is LangHaskell = Just LangHaskell
   | otherwise = Nothing
   where
   fileSet = Set.fromList $ map takeExtension files
@@ -83,6 +85,7 @@ findMainClass :: ([FilePath], KattisLanguage) -> IO (Maybe FilePath)
 findMainClass ([], _)            = return Nothing
 findMainClass (_, LangCplusplus) = return $ Just ""
 findMainClass (_, LangC)         = return $ Just ""
+findMainClass (_, LangHaskell)   = return $ Just ""
 findMainClass (files, LangJava)  = survey <$> filterM containsMain files
   where
   containsMain file = do
@@ -108,9 +111,11 @@ languageContentType :: KattisLanguage -> B.ByteString
 languageContentType LangCplusplus = "text/x-c++src"
 languageContentType LangJava = "text/x-c++src"
 languageContentType LangC = "text/x-c++src"
+languageContentType LangHaskell = "text/x-c++src"
 
 -- | Determine Kattis language string identifier.
 languageKattisName :: KattisLanguage -> B.ByteString
 languageKattisName LangCplusplus = "C++"
 languageKattisName LangJava = "Java"
 languageKattisName LangC = "C"
+languageKattisName LangHaskell = "Haskell"
