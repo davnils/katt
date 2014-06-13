@@ -1,5 +1,5 @@
 name:                katt
-version:             0.2.0.2
+version:             0.2.0.3
 stability:           experimental
 
 synopsis:            Client for the Kattis judge system.
