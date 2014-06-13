@@ -19,18 +19,18 @@ module Utils.Katt.Configuration
 (loadGlobalConfig, projectConfigExists, loadProjectConfig, saveProjectConfig)
 where
 
-import Control.Error hiding (tryIO)
-import Control.Monad
+import           Control.Error hiding (tryIO)
+import           Control.Monad
 import qualified Control.Monad.State as S
-import Control.Monad.Trans (liftIO)
+import           Control.Monad.Trans (liftIO)
 import qualified Data.ByteString.Char8 as B
-import Data.ConfigFile
-import Data.Monoid ((<>))
+import           Data.ConfigFile
+import           Data.Monoid ((<>))
 import qualified Network.URL as U
-import System.Directory (getHomeDirectory)
-import System.IO
-import System.IO.Error (catchIOError)
-import Utils.Katt.Utils
+import           System.Directory (getHomeDirectory)
+import           System.IO
+import           System.IO.Error (catchIOError)
+import           Utils.Katt.Utils
 
 -- | Path to global configuration file, relative home directory.
 globalConfigFile :: FilePath

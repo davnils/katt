@@ -1,14 +1,14 @@
 module Main where
 
-import Control.Applicative ((<$>))
-import Control.Monad
-import Data.List (subsequences)
-import Data.Monoid ((<>))
-import System.Exit (exitFailure, exitSuccess)
-import System.Directory (getDirectoryContents)
-import System.IO
-import Utils.Katt.SourceHandler
-import Utils.Katt.Utils
+import           Control.Applicative ((<$>))
+import           Control.Monad (liftM2)
+import           Data.List (subsequences)
+import           Data.Monoid ((<>))
+import           System.Exit (exitFailure, exitSuccess)
+import           System.Directory (getDirectoryContents)
+import           System.IO (hPutStrLn, stderr)
+import           Utils.Katt.SourceHandler
+import           Utils.Katt.Utils
 
 main :: IO ()
 main = do

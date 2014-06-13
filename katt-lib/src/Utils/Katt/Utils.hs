@@ -11,18 +11,19 @@ module
 Utils.Katt.Utils
 where
 
-import Control.Error hiding (tryIO)
+import           Control.Error hiding (tryIO)
 import qualified Control.Exception as E
-import Control.Lens
-import Control.Monad.Reader
+import           Control.Lens
+import           Control.Monad (liftM)
+import           Control.Monad.Trans (lift)
 import qualified Control.Monad.State as S
 import qualified Data.ByteString.Char8 as B
 import qualified Data.ByteString.Lazy.Char8 as BL
-import Data.Monoid ((<>))
+import           Data.Monoid ((<>))
 import qualified Network.Wreq as W
 import qualified Network.Wreq.Session as WS
-import System.Exit (exitFailure)
-import System.IO (stderr)
+import           System.Exit (exitFailure)
+import           System.IO (stderr)
 
 -- | Configuration layer consisting of configuration state.
 type ConfigEnvInternal m = S.StateT ConfigState m
@@ -114,24 +115,24 @@ problemAddress :: B.ByteString
 problemAddress = "/problems/"
 
 -- | Lift some error monad one layer.
-unWrapTrans :: (Monad m, MonadTrans t) => EitherT e m a -> EitherT e (t m) a
+unWrapTrans :: (Monad m, S.MonadTrans t) => EitherT e m a -> EitherT e (t m) a
 unWrapTrans = EitherT . lift . runEitherT
 
 -- | Execute an IO action and catch any exceptions.
-tryIO :: MonadIO m => IO a -> EitherT ErrorDesc m a
-tryIO = EitherT . liftIO . liftM (fmapL (B.pack . show)) . 
+tryIO :: S.MonadIO m => IO a -> EitherT ErrorDesc m a
+tryIO = EitherT . S.liftIO . liftM (fmapL (B.pack . show)) .
   (E.try :: (IO a -> IO (Either E.SomeException a)))
 
 -- | Execute an IO action and catch any exceptions, tagged with description.
-tryIOMsg :: MonadIO m => B.ByteString -> IO a -> EitherT ErrorDesc m a
-tryIOMsg msg = EitherT . liftIO . liftM (fmapL $ const msg) . 
+tryIOMsg :: S.MonadIO m => B.ByteString -> IO a -> EitherT ErrorDesc m a
+tryIOMsg msg = EitherT . S.liftIO . liftM (fmapL $ const msg) .
   (E.try :: (IO a -> IO (Either E.SomeException a)))
 
 -- | Evaluate an error action and terminate process upon failure.
-terminateOnFailure :: MonadIO m => ErrorDesc -> EitherT ErrorDesc m a -> m a
+terminateOnFailure :: S.MonadIO m => ErrorDesc -> EitherT ErrorDesc m a -> m a
 terminateOnFailure msg state = do
   res <- runEitherT state
-  liftIO $ case res of
+  S.liftIO $ case res of
     Left errorMessage -> do
       B.hPutStrLn stderr $ msg <> ", error: " <> errorMessage
       exitFailure
@@ -164,7 +165,7 @@ withAuth :: (WS.Session -> EitherT ErrorDesc IO a) -> ConfigEnv IO a
 withAuth action = do
   conf <- S.get
 
-  EitherT . liftIO . WS.withSession $ \sess -> runEitherT $ do
+  EitherT . S.liftIO . WS.withSession $ \sess -> runEitherT $ do
     let formData = [("token" :: B.ByteString, apiKey conf),
                     ("user", user conf),
                     ("script", "true")]

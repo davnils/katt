@@ -13,14 +13,14 @@
 module Main(main) where
 
 import qualified Utils.Katt.Configuration as C
-import Control.Monad.State
+import qualified Control.Monad.State as S
 import qualified Data.ByteString.Char8 as B
-import Data.Monoid ((<>))
-import Utils.Katt.Init
-import System.Environment
-import System.Exit (exitFailure)
-import Utils.Katt.Upload
-import Utils.Katt.Utils
+import           Data.Monoid ((<>))
+import           System.Environment (getArgs)
+import           System.Exit (exitFailure)
+import           Utils.Katt.Init
+import           Utils.Katt.Upload
+import           Utils.Katt.Utils
 
 -- | Main loads the global config and runs argument parsing.
 main :: IO ()
@@ -65,5 +65,5 @@ printHelp = putStrLn $
 -- | Run an action with the supplied configuration.
 withConf :: ConfigState -> ConfigEnv IO a -> IO a
 withConf conf action = do
-  (res, _) <- runStateT (terminateOnFailure "Failed to run command" action) conf
+  (res, _) <- S.runStateT (terminateOnFailure "Failed to run command" action) conf
   return res

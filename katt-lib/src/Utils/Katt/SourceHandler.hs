@@ -15,17 +15,17 @@ module Utils.Katt.SourceHandler
 (parseFilter, findFiles, determineLanguage, findMainClass, languageKattisName, languageContentType)
 where
 
-import Control.Applicative ((<$>))
-import Control.Arrow ((***))
-import Control.Monad
+import           Control.Applicative ((<$>))
+import           Control.Arrow ((***))
+import           Control.Monad (filterM, mapAndUnzipM, void)
 import qualified Data.ByteString.Char8 as B
-import Data.List
+import           Data.List ((\\), isSuffixOf)
 import qualified Data.Set as Set
-import System.Directory
-import System.FilePath (takeBaseName, takeExtension)
-import Text.Parsec
-import Text.Parsec.ByteString
-import Utils.Katt.Utils
+import           System.Directory (doesDirectoryExist, getDirectoryContents)
+import           System.FilePath (takeBaseName, takeExtension)
+import           Text.Parsec
+import           Text.Parsec.ByteString
+import           Utils.Katt.Utils
 
 -- | All supported source file extensions, per language.
 supported :: KattisLanguage -> Set.Set FilePath

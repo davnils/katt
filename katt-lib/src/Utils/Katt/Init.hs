@@ -18,24 +18,24 @@ module Utils.Katt.Init
 (initializeProblem, initializeSession)
 where
 
-import Control.Applicative ((<$>), (<*))
-import Codec.Archive.Zip
-import Control.Arrow ((***))
-import Control.Monad (liftM, liftM2, void, when)
+import           Control.Applicative ((<$>), (<*))
+import qualified Codec.Archive.Zip as Z
+import           Control.Arrow ((***))
+import           Control.Monad (liftM, liftM2, void, when)
 import qualified Control.Monad.State as S
-import Control.Error hiding (tryIO)
+import           Control.Error hiding (tryIO)
 import qualified Control.Exception as E
 import qualified Data.ByteString.Char8 as B
 import qualified Data.ByteString.Lazy.Char8 as BL
-import Data.Foldable (fold)
-import Data.List (isSuffixOf, nub)
-import Data.Monoid ((<>))
-import System.Directory
-import System.IO (stderr)
-import Text.Parsec hiding (token)
-import Text.Parsec.ByteString
+import           Data.Foldable (fold)
+import           Data.List (isSuffixOf, nub)
+import           Data.Monoid ((<>))
+import qualified System.Directory as D
+import           System.IO (stderr)
+import           Text.Parsec hiding (token)
+import           Text.Parsec.ByteString
 import qualified Utils.Katt.Configuration as C
-import Utils.Katt.Utils
+import           Utils.Katt.Utils
 
 -- | Parsed test cases associated with a problem.
 type TestContent = [(B.ByteString, B.ByteString)]
@@ -114,9 +114,9 @@ downloadTestArchive :: B.ByteString -> ConfigEnv IO TestContent
 downloadTestArchive url = do
   zipFile <- BL.fromChunks . return <$> retrievePublicPage url
   zipEntries <- tryIOMsg "Failed to unpack zip file: corrupt archive" $
-    E.evaluate (zEntries $ toArchive zipFile)
+    E.evaluate (Z.zEntries $ Z.toArchive zipFile)
 
-  let filterFiles suffix = filter (isSuffixOf suffix . eRelativePath) zipEntries
+  let filterFiles suffix = filter (isSuffixOf suffix . Z.eRelativePath) zipEntries
       inFiles = filterFiles inputTestExtension
       outFiles = filterFiles outputTestExtension
 
@@ -128,7 +128,7 @@ downloadTestArchive url = do
   return $ zipWith (curry convertEntry) inFiles outFiles
   where
   convertEntry = getData *** getData
-  getData = fold . BL.toChunks . fromEntry
+  getData = fold . BL.toChunks . Z.fromEntry
 
 -- | Retrieve test cases, which fall into either one of the three categories.
 retrieveTestFiles :: KattisProblem -> ConfigEnv IO TestContent
@@ -169,8 +169,7 @@ initializeSession retrieveTests session = do
     problems
   where
   parse' = parse parseProblemList "Problem list parser"
-  restoreDir = S.liftIO $ setCurrentDirectory ".."
-  -- TODO: restore to previously used directory
+  restoreDir = S.liftIO $ D.setCurrentDirectory ".."
 
 -- | Given a problem identifier, setup directory structures and
 --   optionally download test cases.
@@ -179,10 +178,10 @@ initializeProblem mkDir retrieveTests problem = do
   S.liftIO . putStrLn $ "Initializing problem: " <> show problem
   problemName <- tryIO $ retrieveProblemName problem
   tryIO . when mkDir $ do
-    createDirectoryIfMissing False (B.unpack problemName)
-    setCurrentDirectory (B.unpack problemName)
+    D.createDirectoryIfMissing False (B.unpack problemName)
+    D.setCurrentDirectory (B.unpack problemName)
 
-  tryIO $ createDirectoryIfMissing False (B.unpack configDir)
+  tryIO $ D.createDirectoryIfMissing False (B.unpack configDir)
 
   fileExists <- S.liftIO C.projectConfigExists
   tryAssert
@@ -193,7 +192,7 @@ initializeProblem mkDir retrieveTests problem = do
   C.saveProjectConfig
 
   when retrieveTests $ do
-    tryIO $ createDirectory testFolder
+    tryIO $ D.createDirectory testFolder
     files <- zip [1..] <$> retrieveTestFiles problem
     mapM_ (\(n :: Integer, (input, output)) -> do
       let fileName = testFolder <> "/" <> B.unpack problemName <> "-" <> show n

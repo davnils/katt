@@ -18,24 +18,24 @@ module Utils.Katt.Upload
 (makeSubmission)
 where
 
-import Control.Applicative ((<$>))
-import qualified Utils.Katt.Configuration as C
-import Control.Concurrent (threadDelay)
-import Control.Error hiding (tryIO)
-import Control.Lens
-import Control.Monad.Reader
+import           Control.Applicative ((<$>))
+import           Control.Concurrent (threadDelay)
+import           Control.Error hiding (tryIO)
+import           Control.Lens
+import           Control.Monad (join, liftM2, void)
 import qualified Control.Monad.State as S
 import qualified Data.ByteString.Char8 as B
-import Data.List ((\\), union, findIndex)
-import Data.Maybe (fromJust)
-import Data.Monoid ((<>))
+import           Data.List ((\\), union, findIndex)
+import           Data.Maybe (fromJust)
+import           Data.Monoid ((<>))
 import qualified Data.Text as T
 import qualified Network.Wreq as W
 import qualified Network.Wreq.Session as WS
-import Utils.Katt.SourceHandler
-import Text.Parsec hiding (token)
-import Text.Parsec.ByteString
-import Utils.Katt.Utils
+import           Text.Parsec hiding (token)
+import           Text.Parsec.ByteString
+import qualified Utils.Katt.Configuration as C
+import           Utils.Katt.SourceHandler
+import           Utils.Katt.Utils
 
 -- | Submission page URL, relative 'Utils.host', from which specific submission can be requested.
 submissionPage :: B.ByteString
@@ -89,7 +89,7 @@ finalSubmissionState s = elem s
 --   will be included in the submission.
 makeSubmission :: [String] -> ConfigEnv IO ()
 makeSubmission filterArguments = do
-  exists <- liftIO C.projectConfigExists
+  exists <- tryIO C.projectConfigExists
   tryAssert "No project configuration could be found."
     exists
 
@@ -101,7 +101,7 @@ makeSubmission filterArguments = do
   files <- tryIOMsg "Failed to locate source files" findFiles
   let adjusted = adjust (parseFilter filterArguments) files
 
-  liftIO $ mapM_ (putStrLn . ("Adding file: "++)) adjusted
+  tryIO $ mapM_ (putStrLn . ("Adding file: "++)) adjusted
 
   -- Authenticate, submit files, and retrieve submission id.
   let url = buildURL (host conf) (submitPage conf)
@@ -248,7 +248,7 @@ submitSolution (sess, _) url (problem, files) = do
   let languageStr = languageKattisName language
 
   -- Locate main class, if any
-  mainClassStr <- join . liftIO $
+  mainClassStr <- join . tryIO $
     (noteT "Failed to locate the \"public static void main\" method - is there any?" . hoistMaybe)
       <$> findMainClass (files, language)
 
