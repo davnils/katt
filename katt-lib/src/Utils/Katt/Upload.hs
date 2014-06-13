@@ -19,48 +19,23 @@ module Utils.Katt.Upload
 where
 
 import Control.Applicative ((<$>))
-import Blaze.ByteString.Builder (fromByteString)
 import qualified Utils.Katt.Configuration as C
 import Control.Concurrent (threadDelay)
 import Control.Error hiding (tryIO)
+import Control.Lens
 import Control.Monad.Reader
 import qualified Control.Monad.State as S
 import qualified Data.ByteString.Char8 as B
 import Data.List ((\\), union, findIndex)
 import Data.Maybe (fromJust)
 import Data.Monoid ((<>))
-import Network.Http.Client
+import qualified Data.Text as T
+import qualified Network.Wreq as W
+import qualified Network.Wreq.Session as WS
 import Utils.Katt.SourceHandler
-import System.IO.Streams (write)
 import Text.Parsec hiding (token)
 import Text.Parsec.ByteString
 import Utils.Katt.Utils
-
--- | Line separator used in HTTP headers. 
-crlf :: B.ByteString
-crlf = "\r\n"
-
--- | Multipart field consisting of an option or file.
-data MultiPartField
-  -- | Option built using a list of assignments and a payload.
-  = Option [B.ByteString] B.ByteString
-  -- | File to submitted, path given.
-  | File FilePath
-
--- | Serialize a chunk based on a file to be submitted.
-buildChunk :: B.ByteString -> MultiPartField -> IO B.ByteString
-buildChunk langStr (File path) = do
-  file <- B.readFile path
-  return $ B.intercalate crlf [headerLine, "Content-Type: " <> langStr, "", file, ""]
-  where
-    headerLine = B.intercalate "; " ["Content-Disposition: form-data", "name=\"sub_file[]\"",
-                                     B.concat ["filename=\"", B.pack path, "\""]]
-
--- | Serialize a chunk based on an option.
-buildChunk _ (Option fields payload) = return $ B.intercalate crlf [headerLine, "", payload, ""]
-  where
-    headerLine = B.intercalate "; " fieldList
-    fieldList = "Content-Disposition: form-data" : fields
 
 -- | Submission page URL, relative 'Utils.host', from which specific submission can be requested.
 submissionPage :: B.ByteString
@@ -120,6 +95,7 @@ makeSubmission filterArguments = do
 
   C.loadProjectConfig
   problem <- fromJust <$> S.gets project
+  conf <- S.get
 
   -- Locate all source files, filter based on filter list.
   files <- tryIOMsg "Failed to locate source files" findFiles
@@ -128,21 +104,18 @@ makeSubmission filterArguments = do
   liftIO $ mapM_ (putStrLn . ("Adding file: "++)) adjusted
 
   -- Authenticate, submit files, and retrieve submission id.
-  token <- authenticate 
+  let url = buildURL (host conf) (submitPage conf)
+      toState sess = (sess, host conf)
 
-  submission <- EitherT $ runReaderT
-    (runEitherT $ submitSolution (problem, adjusted)) token
+  submission <- withAuth $ \sess ->
+    submitSolution (toState sess) url (problem, adjusted)
 
-  tryIO . putStrLn $ "Made submission: " <> show submission
-  tryIO $ threadDelay initialTimeout
+  tryIO $ do
+    putStrLn $ "Made submission: " <> show submission
+    threadDelay initialTimeout
 
-  -- Reauthenticate to allow future requests.
-  token' <- authenticate 
-
-  -- Poll submission page until completion.
-  EitherT $ runReaderT
-    (runEitherT $ checkSubmission submission) token'
-
+  withAuth $ \sess ->
+    checkSubmission (toState sess) submission
   where
   adjust Nothing files = files
   adjust (Just (add, sub)) files = union (files \\ sub) add
@@ -153,10 +126,10 @@ makeSubmission filterArguments = do
 -- | Poll kattis for updates on a submission.
 --  This function returns when the submission has reached one of the final states.
 --  TODO: Consider exponential back-off and timeout
-checkSubmission :: SubmissionId -> AuthEnv IO ()
-checkSubmission submission = do
-  page <- retrievePrivatePage $
-    "/" <> submissionPage <> "?id=" <> B.pack (show submission)
+checkSubmission :: Session -> SubmissionId -> EitherT ErrorDesc IO ()
+checkSubmission sess submission = do
+  page <- retrievePrivatePage sess $
+    submissionPage <> "?id=" <> B.pack (show submission)
   let (state, tests) = parseSubmission page
 
   if finalSubmissionState state
@@ -164,7 +137,7 @@ checkSubmission submission = do
       tryIO $ printResult tests state
     else do
       tryIO $ putStrLn "Waiting for completion.." >> threadDelay interval
-      checkSubmission submission
+      checkSubmission sess submission
    
   where
   -- Default poll interval is 1 s.
@@ -265,56 +238,43 @@ printResult tests state
   resultStr = "Result: " <> show state
   testCaseStr = ", failed on test case " <> firstFailed <> " of " <> numTests
 
-
 -- | Submit a solution, given problem name and source code files.
-submitSolution :: Submission -> AuthEnv IO SubmissionId
-submitSolution (problem, files) = do
+submitSolution :: Session -> String -> Submission -> EitherT ErrorDesc IO SubmissionId
+submitSolution (sess, _) url (problem, files) = do
   -- Determine language in submission.
   language <- noteT ("\nFailed to decide submission language\n" <>
                     "Please use either Java or some union of C++ and C")
     . hoistMaybe $ determineLanguage files
   let languageStr = languageKattisName language
 
+  -- Locate main class, if any
   mainClassStr <- join . liftIO $
     (noteT "Failed to locate the \"public static void main\" method - is there any?" . hoistMaybe)
       <$> findMainClass (files, language)
 
-  -- Build HTTP headers and form.
-  let multiPartSeparator = "separator"
+  -- Construct POST data
+  problemName <- tryIO $ retrieveProblemName problem
+  let files'     = map (W.partFile "sub_file[]") files
+      conv       = T.pack . B.unpack
+      postFields = [W.partText "submit" "true"]
+                <> [W.partText "submit_ctr" "2"]
+                <> [W.partText "language" (conv languageStr)]
+                <> [W.partText "mainclass" (T.pack mainClassStr)]
+                <> [W.partText "problem" (conv problemName)]
+                <> [W.partText "tag" ""]
+                <> [W.partText "script" "true"]
 
-  conf <- S.get
-  header <- makeSignedRequest $ do
-    http POST ("/" <> submitPage conf)
-    defaultRequest
-    setContentType $ B.append "multipart/form-data; boundary=" multiPartSeparator
+  -- Submit the request
+  reply <- tryIO $ WS.postWith
+    defaultOpts
+    sess
+    url
+    (files' <> postFields)
 
-  problemName <- unWrapTrans $ retrieveProblemName problem
-
-  let postFields = [Option ["name=\"submit\""] "true"]
-                <> [Option ["name=\"submit_ctr\""] "2"]
-                <> [Option ["name=\"language\""] languageStr]
-                <> [Option ["name=\"mainclass\""] (B.pack mainClassStr)]
-                <> [Option ["name=\"problem\""] problemName]
-                <> [Option ["name=\"tag\""] ""]
-                <> [Option ["name=\"script\""] "true"]
-                <> map File files
-
-  reply <- unWrapTrans . withConn $ \conn -> do
-    -- Send request.
-    sendRequest conn header (\o -> do
-      mapM_ (\part -> do
-          serialized <- buildChunk (languageContentType language) part
-          write (Just . fromByteString $ B.concat ["--", multiPartSeparator, crlf, serialized]) o)
-        postFields
-
-      write (Just . fromByteString $ B.concat ["--", multiPartSeparator, "--", crlf]) o
-      )
-
-    -- Receive server response and parse submission ID.
-    receiveResponse conn concatHandler
-
+  -- Extract the submission ID
+  let body = reply ^. W.responseBody
   (EitherT . return  . fmapL (B.pack . show)) $
-    parse parseSubmissionId "Submission ID parser" reply
+    parse parseSubmissionId "Submission ID parser" body
 
   where
   parseSubmissionId = manyTill anyChar (lookAhead identifier) >> identifier

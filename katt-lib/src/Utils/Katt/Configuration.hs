@@ -106,7 +106,7 @@ saveProjectConfig :: ConfigEnv IO ()
 saveProjectConfig = do
   project' <- S.gets project
   state <- noteT "Tried to save an empty project configuration." . hoistMaybe $ project'
-  problemName <- retrieveProblemName state
+  problemName <- tryIO $ retrieveProblemName state
   serialized <- serialize problemName
   tryIOMsg (B.pack $
             "Failed to save project configuration file (path: "

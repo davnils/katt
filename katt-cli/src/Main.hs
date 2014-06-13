@@ -17,7 +17,6 @@ import Control.Monad.State
 import qualified Data.ByteString.Char8 as B
 import Data.Monoid ((<>))
 import Utils.Katt.Init
-import OpenSSL (withOpenSSL)
 import System.Environment
 import System.Exit (exitFailure)
 import Utils.Katt.Upload
@@ -34,7 +33,7 @@ main = do
       exitFailure
     Right c -> return c
 
-  withOpenSSL $ parseArgs conf'
+  parseArgs conf'
 
 -- | Given some configuration state, parse arguments and
 --   run the appropiate submodule.

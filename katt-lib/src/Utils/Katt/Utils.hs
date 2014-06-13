@@ -11,26 +11,23 @@ module
 Utils.Katt.Utils
 where
 
-import Control.Applicative ((<$>))
 import Control.Error hiding (tryIO)
 import qualified Control.Exception as E
+import Control.Lens
 import Control.Monad.Reader
 import qualified Control.Monad.State as S
 import qualified Data.ByteString.Char8 as B
+import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Monoid ((<>))
-import Network.Http.Client
+import qualified Network.Wreq as W
+import qualified Network.Wreq.Session as WS
 import System.Exit (exitFailure)
 import System.IO (stderr)
-import System.IO.Streams (readExactly)
 
 -- | Configuration layer consisting of configuration state.
 type ConfigEnvInternal m = S.StateT ConfigState m
 -- | Configuration layer wrapped with error handling.
 type ConfigEnv m = EitherT ErrorDesc (ConfigEnvInternal m)
-
--- | Authentication layer with token state and error handling,
---   wrapping the configuration layer.
-type AuthEnv m = EitherT ErrorDesc (ReaderT B.ByteString (ConfigEnvInternal m))
 
 -- | Submissions consist of a problem identifier and a set of file paths.
 type Submission = (KattisProblem, [FilePath])
@@ -64,6 +61,9 @@ data ConfigState =
     project :: Maybe ProjectState
   }
   deriving Show
+
+-- | HTTP client session and the host path.
+type Session = (WS.Session, B.ByteString)
 
 -- | A Kattis problem.
 data KattisProblem
@@ -127,12 +127,6 @@ tryIOMsg :: MonadIO m => B.ByteString -> IO a -> EitherT ErrorDesc m a
 tryIOMsg msg = EitherT . liftIO . liftM (fmapL $ const msg) . 
   (E.try :: (IO a -> IO (Either E.SomeException a)))
 
-withConn :: MonadIO m => (Connection -> IO a) -> ConfigEnv m a
-withConn f = do
-  host' <- host <$> S.get
-  conn <- tryIOMsg "Failed to establish connection" $ establishConnection host'
-  tryIO $ E.finally (f conn) (closeConnection conn) 
-
 -- | Evaluate an error action and terminate process upon failure.
 terminateOnFailure :: MonadIO m => ErrorDesc -> EitherT ErrorDesc m a -> m a
 terminateOnFailure msg state = do
@@ -143,81 +137,53 @@ terminateOnFailure msg state = do
       exitFailure
     Right success -> return success
 
--- | Sign an existing HTTP request with a temporary token.
-makeSignedRequest :: RequestBuilder () -> AuthEnv IO Request
-makeSignedRequest req = do
-  key <- lift $ liftM (setHeader "Cookie") ask
-  liftIO . buildRequest $ req >> key
+-- | Default HTTP options.
+defaultOpts :: W.Options
+defaultOpts = W.defaults
+            & W.header "User-Agent" .~ [programName]
 
--- | Default HTTP request.
-defaultRequest :: RequestBuilder ()
-defaultRequest = do
-  setHeader "User-Agent" programName
-  setHeader "Connection" "keep-alive"
-
--- | Retrieve a publically available page, using HTTP GET.
+-- | Retrieve a publicly available page, using HTTP GET.
 retrievePublicPage :: B.ByteString -> ConfigEnv IO B.ByteString
-retrievePublicPage page = do
-  header <- tryIO . buildRequest $ http GET page >> defaultRequest
-  makeRequest header
+retrievePublicPage path = do
+  host' <- S.gets host
+  reply <- tryIO $ W.getWith defaultOpts $ buildURL host' path
+  return . B.concat . BL.toChunks $ reply ^. W.responseBody
 
 -- | Retrieve a page requiring authentication, using HTTP GET.
-retrievePrivatePage :: B.ByteString -> AuthEnv IO B.ByteString
-retrievePrivatePage page = do
-  header <- makeSignedRequest $ do
-    http GET page
-    defaultRequest
-  unWrapTrans $ makeRequest header
+retrievePrivatePage :: Session -> B.ByteString -> EitherT ErrorDesc IO B.ByteString
+retrievePrivatePage (sess, host') page = do
+  reply <- tryIO $ WS.getWith defaultOpts sess (buildURL host' page)
+  return . B.concat . BL.toChunks $ reply ^. W.responseBody
 
--- | Make a HTTP request and retrieve the server response body.
-makeRequest :: Request -> ConfigEnv IO B.ByteString
-makeRequest header = withConn $ \conn -> do
-  sendRequest conn header emptyBody
-  receiveResponse conn concatHandler
+-- | Construct URL from host path (e.g. /http:\/\/x.com\/) and path (e.g. //).
+buildURL :: B.ByteString -> B.ByteString -> String
+buildURL host' path = B.unpack $ host' <> "/" <> path
 
--- | Extract correct temporary token from cookie header string.
-extractSessionHeader :: B.ByteString -> Maybe B.ByteString
-extractSessionHeader headerStr 
-  | B.null match = Nothing
-  | otherwise =
-    case extractSessionHeader (B.tail match) of
-      Just match' -> Just match'
-      Nothing -> Just $ B.takeWhile (/= ';') match
-  where
-  (_, match) = B.breakSubstring "PHPSESSID" headerStr
-
--- | Authenticate an existing connection, returns a temporary token.
---   Basically the API token is used to acquire a session-specific token.
-authenticate :: ConfigEnv IO B.ByteString
-authenticate = do
+-- | Authenticate and run the provided action.
+withAuth :: (WS.Session -> EitherT ErrorDesc IO a) -> ConfigEnv IO a
+withAuth action = do
   conf <- S.get
 
-  header <- tryIO . buildRequest $ do
-    http POST ("/" <> loginPage conf)
-    defaultRequest
-    setContentType "application/x-www-form-urlencoded"
+  EitherT . liftIO . WS.withSession $ \sess -> runEitherT $ do
+    let formData = [("token" :: B.ByteString, apiKey conf),
+                    ("user", user conf),
+                    ("script", "true")]
+        url      = buildURL (host conf) (loginPage conf)
 
-  let formData = [("token", apiKey conf), ("user", user conf), ("script", "true")] 
+    reply <- tryIO $ WS.postWith defaultOpts sess url formData
+    let response = B.concat . BL.toChunks $ reply ^. W.responseBody
 
-  (headers, response) <- withConn $ \conn -> do
-    sendRequest conn header $ encodedFormBody formData
-    receiveResponse conn (\headers stream -> do
-      response <- readExactly (B.length loginSuccess) stream
-      return (headers, response))
+    tryAssert ("Login failure. Server returned: '" <> response <> "'")
+      (response == loginSuccess)
 
-  tryAssert ("Login failure. Server returned: '" <> response <> "'")
-    (response == loginSuccess)
-    
-  noteT "Failed to parse login cookie" . hoistMaybe $ 
-    getHeader headers "Set-Cookie" >>= extractSessionHeader
+    action sess
 
 -- | Retrieve problem ID of a Kattis problem.
-retrieveProblemId :: KattisProblem -> ConfigEnv IO Integer
+retrieveProblemId :: KattisProblem -> IO Integer
 retrieveProblemId (ProblemId id') = return id'
 retrieveProblemId (ProblemName _) = undefined
 
 -- | Retrieve problem name of a Kattis problem.
-retrieveProblemName :: KattisProblem -> ConfigEnv IO B.ByteString
+retrieveProblemName :: KattisProblem -> IO B.ByteString
 retrieveProblemName (ProblemId _) = undefined
 retrieveProblemName (ProblemName name) = return name
-

@@ -133,7 +133,7 @@ downloadTestArchive url = do
 -- | Retrieve test cases, which fall into either one of the three categories.
 retrieveTestFiles :: KattisProblem -> ConfigEnv IO TestContent
 retrieveTestFiles problem = do
-  problemName <- retrieveProblemName problem
+  problemName <- tryIO $ retrieveProblemName problem
   problemPage <- retrievePublicPage $ problemAddress <> problemName
 
   case parseProblemPage problemPage of
@@ -177,7 +177,7 @@ initializeSession retrieveTests session = do
 initializeProblem :: Bool -> Bool -> KattisProblem -> ConfigEnv IO ()
 initializeProblem mkDir retrieveTests problem = do
   S.liftIO . putStrLn $ "Initializing problem: " <> show problem
-  problemName <- retrieveProblemName problem
+  problemName <- tryIO $ retrieveProblemName problem
   tryIO . when mkDir $ do
     createDirectoryIfMissing False (B.unpack problemName)
     setCurrentDirectory (B.unpack problemName)
